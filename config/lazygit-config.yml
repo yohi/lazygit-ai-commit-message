@@ -1,0 +1,10 @@
+customCommands:
+  - key: '<c-g>'
+    context: 'files'
+    description: 'AI コミットメッセージ生成'
+    command: '$HOME/.config/lazygit/scripts/gemini-commit.sh'
+    subprocess: true
+    prompts:
+      - type: 'confirm'
+        title: '生成AIがコミットメッセージを作成します。よろしいですか？'
+        body: 'ステージングされた変更を分析してコミットメッセージを生成します。'
