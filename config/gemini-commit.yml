@@ -1,0 +1,34 @@
+gemini:
+  model: "gemini-1.5-flash"
+  temperature: 0.3
+  max_tokens: 200
+  timeout: 30
+  
+commit:
+  language: "ja"
+  format: "conventional"
+  max_diff_size: 10000
+  
+prompts:
+  system: |
+    あなたは優秀な開発者です。
+    git diffを分析して適切なコミットメッセージを生成してください。
+  
+  user_template: |
+    以下の変更に対するコミットメッセージを{language}で生成してください。
+    
+    要件:
+    - Conventional Commits形式に従う ({format})
+    - 50文字以内の簡潔な要約行
+    - 必要に応じて詳細説明を追加
+    - 変更の意図と影響を明確に表現
+    
+    変更内容:
+    {diff_content}
+    
+    コミットメッセージ:
+
+ui:
+  show_progress: true
+  confirm_before_commit: true
+  editor_command: "${EDITOR:-vim}"
