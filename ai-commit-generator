@@ -1,0 +1,261 @@
+#!/bin/bash
+# AI Commit Generator メインスクリプト
+# Lazygit用AIコミットメッセージ生成プラグイン
+
+set -euo pipefail
+
+# スクリプトのディレクトリを取得
+MAIN_SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SRC_DIR="${MAIN_SCRIPT_DIR}/src"
+
+# 依存スクリプトを読み込み
+source "${SRC_DIR}/logger.sh"
+source "${SRC_DIR}/config_loader.sh"
+source "${SRC_DIR}/error_handler.sh"
+source "${SRC_DIR}/ui_helper.sh"
+source "${SRC_DIR}/git_analyzer.sh"
+source "${SRC_DIR}/gemini_client.sh"
+
+# バージョン情報
+VERSION="1.0.0"
+AUTHOR="AI Commit Generator"
+
+# 使用方法を表示
+show_usage() {
+    cat <<EOF
+AI Commit Generator v${VERSION}
+
+使用方法:
+  ai-commit-generator [オプション]
+
+オプション:
+  -h, --help              このヘルプを表示
+  -v, --version           バージョン情報を表示
+  -c, --config <file>     設定ファイルを指定
+  -l, --log-level <level> ログレベルを設定 (debug|info|warn|error)
+  --generate-sample-config サンプル設定ファイルを生成
+  --diagnose              システム診断を実行
+  --test-gemini           Gemini CLI接続テストを実行
+  --debug-gemini          Gemini CLI詳細デバッグを実行
+  --check-env             環境変数チェックを実行
+  --dry-run               実際の生成なしでプロセスをテスト
+
+例:
+  ai-commit-generator                    # 通常実行
+  ai-commit-generator --log-level debug  # デバッグモードで実行
+  ai-commit-generator --diagnose         # システム診断
+
+詳細: https://github.com/your-repo/ai-commit-generator
+EOF
+}
+
+# バージョン情報を表示
+show_version() {
+    echo "AI Commit Generator v${VERSION}"
+    echo "作者: ${AUTHOR}"
+    echo
+    echo "システム情報:"
+    echo "  OS: $(uname -s) $(uname -r)"
+    echo "  シェル: ${SHELL}"
+    echo "  Git: $(git --version 2>/dev/null || echo 'Not installed')"
+    echo "  Gemini CLI: $(which gemini 2>/dev/null || echo 'Not installed')"
+}
+
+# コマンドライン引数を解析
+parse_arguments() {
+    local dry_run=false
+    local custom_config=""
+    local custom_log_level=""
+    
+    while [[ $# -gt 0 ]]; do
+        case $1 in
+            -h|--help)
+                show_usage
+                exit 0
+                ;;
+            -v|--version)
+                show_version
+                exit 0
+                ;;
+            -c|--config)
+                custom_config="$2"
+                shift 2
+                ;;
+            -l|--log-level)
+                custom_log_level="$2"
+                shift 2
+                ;;
+            --generate-sample-config)
+                generate_sample_config
+                exit 0
+                ;;
+            --diagnose)
+                diagnose_system
+                exit 0
+                ;;
+            --test-gemini)
+                "${MAIN_SCRIPT_DIR}/scripts/test_gemini.sh"
+                exit 0
+                ;;
+            --debug-gemini)
+                "${MAIN_SCRIPT_DIR}/scripts/debug_gemini.sh"
+                exit 0
+                ;;
+            --check-env)
+                exec "${MAIN_SCRIPT_DIR}/scripts/env_check.sh"
+                ;;
+            --dry-run)
+                dry_run=true
+                shift
+                ;;
+            *)
+                echo "エラー: 不明なオプション: $1" >&2
+                echo "使用方法については --help を参照してください" >&2
+                exit 1
+                ;;
+        esac
+    done
+    
+    # グローバル変数に設定
+    export DRY_RUN="$dry_run"
+    export CUSTOM_CONFIG="$custom_config"
+    export CUSTOM_LOG_LEVEL="$custom_log_level"
+}
+
+# 環境変数を設定
+setup_environment() {
+    # ログレベルを設定
+    if [[ -n "${CUSTOM_LOG_LEVEL:-}" ]]; then
+        export LOG_LEVEL="$CUSTOM_LOG_LEVEL"
+    else
+        export LOG_LEVEL=$(get_config_value '.logging.level' 'info')
+    fi
+    
+    # ログファイルを設定
+    local log_file=$(get_config_value '.logging.file' '')
+    if [[ -n "$log_file" ]]; then
+        export LOG_FILE="$log_file"
+        # ログディレクトリを作成
+        mkdir -p "$(dirname "$log_file")"
+    fi
+    
+    log_info "AI Commit Generator v${VERSION} を開始"
+    log_debug "環境設定完了 - ログレベル: $LOG_LEVEL"
+}
+
+# 前提条件をチェック
+check_prerequisites() {
+    log_info "前提条件をチェック中..."
+    
+    # Gitリポジトリチェック
+    if ! git rev-parse --git-dir >/dev/null 2>&1; then
+        handle_error "${ERROR_CODES["GIT_NOT_REPOSITORY"]}"
+    fi
+    
+    # Gemini CLIチェック
+    if ! check_gemini_cli; then
+        handle_error "${ERROR_CODES["GEMINI_CLI_NOT_FOUND"]}"
+    fi
+    
+    # 設定ファイル検証
+    if ! validate_config; then
+        handle_error "${ERROR_CODES["CONFIG_INVALID"]}"
+    fi
+    
+    log_info "前提条件チェック完了"
+}
+
+# メイン処理
+main_process() {
+    log_info "コミットメッセージ生成プロセスを開始..."
+    
+    # UI初期化
+    setup_signal_handlers
+    
+    # 確認ダイアログ表示
+    if ! show_confirmation "AIコミットメッセージ生成" "生成AIがコミットメッセージを作成します"; then
+        log_info "ユーザーによってキャンセルされました"
+        exit 0
+    fi
+    
+    # ローディング表示開始
+    start_spinner "ステージされたファイルを分析中..."
+    
+    # Git diff分析
+    log_debug "Git diff分析を実行中..."
+    local file_analysis
+    if ! file_analysis=$(analyze_files 2>/dev/null); then
+        stop_spinner
+        handle_error "${ERROR_CODES["GIT_NO_STAGED_FILES"]}"
+    fi
+    
+    # Git diff取得
+    local diff_content
+    if ! diff_content=$(get_git_diff 2>/dev/null); then
+        stop_spinner
+        handle_error "${ERROR_CODES["GIT_DIFF_ERROR"]}"
+    fi
+    
+    stop_spinner
+    show_success "ファイル分析完了"
+    
+    # ドライランモード
+    if [[ "${DRY_RUN:-false}" == "true" ]]; then
+        echo "=== ドライランモード ==="
+        echo "分析結果:"
+        echo "$file_analysis" | jq .
+        echo
+        echo "Diff サマリー:"
+        echo "$(echo "$diff_content" | head -20)"
+        echo "..."
+        log_info "ドライラン完了"
+        exit 0
+    fi
+    
+    # Gemini CLIでメッセージ生成
+    start_spinner "AIコミットメッセージを生成中..."
+    
+    local commit_message
+    if ! commit_message=$(generate_commit_message "$diff_content" "$file_analysis" 2>/dev/null); then
+        stop_spinner
+        handle_recoverable_error "${ERROR_CODES["GEMINI_API_ERROR"]}" \
+            "手動でコミットメッセージを入力してください"
+        exit "${ERROR_CODES["GEMINI_API_ERROR"]}"
+    fi
+    
+    stop_spinner
+    show_success "コミットメッセージ生成完了"
+    
+    # メッセージをLazygitに返す
+    return_to_lazygit "$commit_message"
+    
+    log_info "プロセス正常完了"
+}
+
+# メイン関数
+main() {
+    # エラーハンドラー設定
+    setup_error_handlers
+    
+    # 引数解析
+    parse_arguments "$@"
+    
+    # 環境設定
+    setup_environment
+    
+    # 前提条件チェック
+    check_prerequisites
+    
+    # メイン処理実行
+    main_process
+    
+    # クリーンアップ
+    cleanup_ui
+    
+    exit 0
+}
+
+# スクリプトが直接実行された場合
+if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
+    main "$@"
+fi
