@@ -176,11 +176,17 @@ update_lazygit_config() {
             log_warn "AI Commit Generatorのカスタムコマンドは既に設定されています"
         else
             # カスタムコマンドを追加
-            if grep -q "customCommands:" "$lazygit_config"; then
-                # customCommandsセクションが既に存在する場合
-                sed -i '/customCommands:/r '"$custom_command_config" "$lazygit_config"
+            if command -v yq >/dev/null 2>&1; then
+                # YAMLとして安全にマージ
+                log_info "yqを使用してYAML設定をマージします"
+                yq eval-all 'select(fileIndex == 0) * select(fileIndex == 1)' "$lazygit_config" "$custom_command_config" > "$lazygit_config.tmp" && mv "$lazygit_config.tmp" "$lazygit_config"
+            elif grep -q "customCommands:" "$lazygit_config"; then
+                # customCommandsセクションが既に存在する場合 - AWKで安全に挿入
+                log_info "既存のcustomCommandsセクションに追加します"
+                awk '/customCommands:/{print; while((getline line < "'"$custom_command_config"'") > 0) {if(line !~ /^customCommands:/) print line}; next} 1' "$lazygit_config" > "$lazygit_config.tmp" && mv "$lazygit_config.tmp" "$lazygit_config"
             else
                 # customCommandsセクションが存在しない場合
+                log_info "新しくcustomCommandsセクションを追加します"
                 cat "$custom_command_config" >> "$lazygit_config"
             fi
         fi
@@ -292,8 +298,14 @@ uninstall() {
             # バックアップを作成
             cp "$lazygit_config" "$lazygit_config.backup.$(date +%Y%m%d_%H%M%S)"
             
-            # AI Commit Generatorの設定を削除
-            sed -i '/ai-commit-generator/d' "$lazygit_config"
+            # AI Commit Generatorの設定を削除（移植性対応）
+            if command -v yq >/dev/null 2>&1; then
+                # yqで安全に削除
+                yq eval 'del(.customCommands[] | select(.key == "ai-commit-generator"))' "$lazygit_config" > "$lazygit_config.tmp" && mv "$lazygit_config.tmp" "$lazygit_config"
+            else
+                # sedの移植性対応（一時ファイル経由）
+                grep -v 'ai-commit-generator' "$lazygit_config" > "$lazygit_config.tmp" && mv "$lazygit_config.tmp" "$lazygit_config"
+            fi
             log_success "Lazygit設定からAI Commit Generatorの設定を削除しました"
         else
             log_info "Lazygit設定は保持されました"
