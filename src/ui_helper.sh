@@ -34,7 +34,7 @@ start_spinner() {
     fi
     
     # カーソルを隠す
-    tput civis 2>/dev/null || printf "\033[?25l" >&2
+    { tput civis || printf "\033[?25l"; } 2>/dev/null >&2
     
     {
         local i=0
@@ -65,7 +65,7 @@ stop_spinner() {
         SPINNER_PID=""
         # 行をクリアしてカーソルを表示
         printf "\r\033[K" >&2
-        tput cnorm 2>/dev/null || printf "\033[?25h" >&2
+        { tput cnorm || printf "\033[?25h"; } 2>/dev/null >&2
         log_debug "スピナーを停止しました"
     fi
 }
@@ -86,6 +86,8 @@ show_confirmation() {
     echo
     
     if ! read -p "続行しますか？ [y/N]: " -r; then
+        REPLY=""
+        echo >&2
         log_info "入力がキャンセルされました"
         return 1
     fi
@@ -188,7 +190,7 @@ cleanup_ui() {
     stop_spinner
     
     # カーソルを表示
-    printf "\033[?25h"
+    printf "\033[?25h" >&2
     
     log_debug "UI クリーンアップ完了"
 }
@@ -213,8 +215,8 @@ run_with_spinner() {
         return 1
     fi
     
-    # クリーンアップ用のtrap設定
-    trap 'rm -f "$temp_file"' EXIT INT TERM
+    # クリーンアップ用のtrap設定（EXITは保持、INT/TERMのみ設定）
+    trap 'stop_spinner; rm -f "$temp_file"' INT TERM
     
     start_spinner "$message"
     
@@ -231,7 +233,7 @@ run_with_spinner() {
         # 一時ファイルの内容を出力（改行を保持）
         cat "$temp_file"
         rm -f "$temp_file"
-        trap - EXIT INT TERM
+        trap - INT TERM
         return 0
     else
         # エラー時は内容を確認し、適切にハンドリング
@@ -253,7 +255,7 @@ run_with_spinner() {
         fi
         
         rm -f "$temp_file"
-        trap - EXIT INT TERM
+        trap - INT TERM
         return $exit_code
     fi
 }
@@ -267,10 +269,16 @@ get_user_input() {
     local input
     while true; do
         if [[ -n "$default_value" ]]; then
-            read -p "$prompt [$default_value]: " -r input
+            if ! read -p "$prompt [$default_value]: " -r input; then
+                input="$default_value"
+                echo >&2
+            fi
             input="${input:-$default_value}"
         else
-            read -p "$prompt: " -r input
+            if ! read -p "$prompt: " -r input; then
+                input=""
+                echo >&2
+            fi
         fi
         
         if [[ $input =~ $validation_regex ]]; then
