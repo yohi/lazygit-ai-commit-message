@@ -203,7 +203,13 @@ main_process() {
     if [[ "${DRY_RUN:-false}" == "true" ]]; then
         echo "=== ドライランモード ==="
         echo "分析結果:"
-        echo "$file_analysis" | jq .
+        if command -v jq >/dev/null 2>&1; then
+            echo "$file_analysis" | jq .
+        elif command -v python3 >/dev/null 2>&1; then
+            echo "$file_analysis" | python3 -m json.tool 2>/dev/null || echo "$file_analysis"
+        else
+            echo "$file_analysis"
+        fi
         echo
         echo "Diff サマリー:"
         echo "$(echo "$diff_content" | head -20)"

@@ -22,10 +22,12 @@ get_log_level_num() {
 log_message() {
     local level="$1"
     local message="$2"
-    local timestamp=$(date '+%Y-%m-%d %H:%M:%S')
+    local timestamp
+    local current_level
+    timestamp=$(date '+%Y-%m-%d %H:%M:%S')
     
     # ログレベルチェック
-    local current_level=$(get_log_level_num)
+    current_level=$(get_log_level_num)
     local msg_level="${LOG_LEVELS[${level}]:-1}"
     
     if [[ $msg_level -lt $current_level ]]; then

@@ -93,7 +93,7 @@ call_gemini_cli() {
     # Gemini CLIを実行（ログ出力を完全に分離）
     # Docker環境では--promptオプションを使用（stdin使用でハングするため）
     local temp_output=$(mktemp)
-    if (timeout "${timeout}" gemini --prompt="$prompt" 2>"$error_file") >"$temp_output"; then
+    if (timeout "${timeout}" "$(get_gemini_command)" --prompt="$prompt" 2>"$error_file") >"$temp_output"; then
         result=$(cat "$temp_output")
         rm -f "$temp_output"
         log_debug "成功: --promptオプション"
@@ -220,12 +220,24 @@ generate_commit_message() {
     
     # 設定を読み込み
     local config=$(load_config)
-    local model=$(echo "$config" | jq -r '.gemini.model // "gemini-pro"')
-    local temperature=$(echo "$config" | jq -r '.gemini.temperature // 0.3')
-    local max_tokens=$(echo "$config" | jq -r '.gemini.max_tokens // 100')
-    local timeout=$(echo "$config" | jq -r '.gemini.timeout // 30')
-    local language=$(echo "$config" | jq -r '.commit_message.language // "ja"')
-    local max_length=$(echo "$config" | jq -r '.commit_message.max_length // 72')
+    local model temperature max_tokens timeout language max_length
+    
+    if command -v jq >/dev/null 2>&1; then
+        model=$(echo "$config" | jq -r '.gemini.model // "gemini-pro"')
+        temperature=$(echo "$config" | jq -r '.gemini.temperature // 0.3')
+        max_tokens=$(echo "$config" | jq -r '.gemini.max_tokens // 100')
+        timeout=$(echo "$config" | jq -r '.gemini.timeout // 30')
+        language=$(echo "$config" | jq -r '.commit_message.language // "ja"')
+        max_length=$(echo "$config" | jq -r '.commit_message.max_length // 72')
+    else
+        # jqが使用できない場合のデフォルト値
+        model="gemini-pro"
+        temperature="0.3"
+        max_tokens="100"
+        timeout="30"
+        language="ja"
+        max_length="72"
+    fi
     
     # Gemini CLIチェック
     if ! check_gemini_cli; then
@@ -237,9 +249,7 @@ generate_commit_message() {
     
     # Gemini CLI実行
     local response
-    response=$(call_gemini_cli "$prompt" "$model" "$temperature" "$max_tokens" "$timeout")
-    
-    if [[ $? -ne 0 ]]; then
+    if ! response=$(call_gemini_cli "$prompt" "$model" "$temperature" "$max_tokens" "$timeout"); then
         return 1
     fi
     

@@ -14,8 +14,10 @@ SPINNER_CHARS="⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
 # スピナーを開始
 start_spinner() {
     local message="${1:-処理中...}"
-    local config=$(load_config)
-    local show_spinner=$(echo "$config" | jq -r '.ui.show_spinner // true')
+    local config
+    local show_spinner
+    config=$(load_config)
+    show_spinner=$(get_config_value ".ui.show_spinner" "true" <<< "$config")
     
     if [[ "$show_spinner" != "true" ]]; then
         echo "$message"
@@ -51,8 +53,10 @@ stop_spinner() {
 show_confirmation() {
     local title="$1"
     local message="$2"
-    local config=$(load_config)
-    local confirmation_required=$(echo "$config" | jq -r '.ui.confirmation_required // true')
+    local config
+    local confirmation_required
+    config=$(load_config)
+    confirmation_required=$(get_config_value ".ui.confirmation_required" "true" <<< "$config")
     
     if [[ "$confirmation_required" != "true" ]]; then
         return 0

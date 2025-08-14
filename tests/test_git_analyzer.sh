@@ -65,13 +65,18 @@ assert_contains() {
 
 # テスト用の一時Gitリポジトリを作成
 setup_test_repo() {
-    local test_repo_dir="/tmp/test_repo_$$"
-    mkdir -p "$test_repo_dir"
-    cd "$test_repo_dir"
+    local test_repo_dir
+    test_repo_dir=$(mktemp -d)
+    
+    # 現在のディレクトリを保存
+    pushd "$test_repo_dir" >/dev/null
     
     git init >/dev/null 2>&1
     git config user.email "test@example.com"
     git config user.name "Test User"
+    
+    # クリーンアップ用の関数を設定
+    trap "popd >/dev/null 2>&1; rm -rf '$test_repo_dir'" EXIT
     
     echo "$test_repo_dir"
 }

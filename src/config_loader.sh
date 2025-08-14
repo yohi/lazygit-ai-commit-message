@@ -133,8 +133,10 @@ load_user_config() {
 
 # 設定をマージして読み込み
 load_config() {
-    local default_config=$(load_default_config)
-    local user_config=$(load_user_config)
+    local default_config
+    local user_config
+    default_config=$(load_default_config)
+    user_config=$(load_user_config)
     
     # jqが利用可能な場合はマージ
     if command -v jq >/dev/null 2>&1; then
@@ -154,12 +156,14 @@ load_config() {
 get_config_value() {
     local key="$1"
     local default_value="${2:-}"
+    local config
+    local value
     
-    local config=$(load_config)
+    config=$(load_config)
     
     # jqが利用可能な場合
     if command -v jq >/dev/null 2>&1; then
-        local value=$(echo "$config" | jq -r "$key // empty" 2>/dev/null)
+        value=$(echo "$config" | jq -r "$key // empty" 2>/dev/null)
         
         if [[ -z "$value" ]] || [[ "$value" == "null" ]] || [[ "$value" == "empty" ]]; then
             echo "$default_value"
@@ -217,7 +221,8 @@ EOF
 
 # 設定検証
 validate_config() {
-    local config=$(load_config)
+    local config
+    config=$(load_config)
     
     # 設定が読み込めているかチェック
     if [[ -z "$config" ]] || [[ "$config" == "null" ]]; then
@@ -228,8 +233,10 @@ validate_config() {
     # jqが利用可能な場合のみ詳細検証
     if command -v jq >/dev/null 2>&1; then
         # 必須設定のチェック
-        local model=$(echo "$config" | jq -r '.gemini.model // empty' 2>/dev/null)
-        local language=$(echo "$config" | jq -r '.commit_message.language // empty' 2>/dev/null)
+        local model
+        local language
+        model=$(echo "$config" | jq -r '.gemini.model // empty' 2>/dev/null)
+        language=$(echo "$config" | jq -r '.commit_message.language // empty' 2>/dev/null)
         
         if [[ -z "$model" ]] || [[ "$model" == "null" ]]; then
             echo "エラー: Geminiモデルが設定されていません" >&2
@@ -254,7 +261,14 @@ if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
             validate_config
             ;;
         "show")
-            load_config | jq .
+            config_output=$(load_config)
+            if command -v jq >/dev/null 2>&1; then
+                echo "$config_output" | jq .
+            elif command -v python3 >/dev/null 2>&1; then
+                echo "$config_output" | python3 -m json.tool 2>/dev/null || echo "$config_output"
+            else
+                echo "$config_output"
+            fi
             ;;
         *)
             echo "使用方法: $0 [sample|validate|show]"

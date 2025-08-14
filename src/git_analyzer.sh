@@ -88,7 +88,8 @@ analyze_files() {
         safe_additions="${safe_additions:-0}"
         safe_deletions="${safe_deletions:-0}"
         
-        local file_entry=$(cat <<EOF
+        local file_entry
+        file_entry=$(cat <<EOF
     {
       "path": "${filename}",
       "type": "${change_type}",

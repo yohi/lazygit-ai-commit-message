@@ -134,8 +134,16 @@ install_files() {
     # srcディレクトリをコピー
     cp -r "$PROJECT_DIR/src" "$INSTALL_DIR/"
     
-    # 設定ファイルをコピー
-    cp -r "$PROJECT_DIR/config" "$CONFIG_DIR/"
+    # 設定ファイルをコピー（既存設定の保護）
+    if [[ -d "$CONFIG_DIR/config" ]]; then
+        backup_dir="$CONFIG_DIR/config.backup.$(date +%Y%m%d_%H%M%S)"
+        log_info "既存の設定ディレクトリをバックアップ: $backup_dir"
+        mv "$CONFIG_DIR/config" "$backup_dir"
+        cp -r "$PROJECT_DIR/config" "$CONFIG_DIR/"
+        log_info "新しい設定を適用し、既存設定は $backup_dir に保存しました"
+    else
+        cp -r "$PROJECT_DIR/config" "$CONFIG_DIR/"
+    fi
     
     log_success "ファイルインストール完了"
 }

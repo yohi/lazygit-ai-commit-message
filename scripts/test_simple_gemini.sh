@@ -15,6 +15,12 @@ fi
 echo "成功: APIキーが設定されています"
 echo
 
+# Gemini CLI の存在確認
+if ! command -v gemini >/dev/null 2>&1; then
+    echo "エラー: gemini コマンドが見つかりません。gemini をインストールしてください。" >&2
+    exit 1
+fi
+
 # 実際のテスト - 簡単なプロンプト
 echo "=== Gemini CLI実行 ==="
 echo "コマンド: echo プロンプト | gemini"
@@ -38,10 +44,12 @@ if result=$(echo "$simple_prompt" | gemini 2>&1); then
         echo "成功: 有効なメッセージが生成されました"
     else
         echo "エラー: 空のメッセージです"
+        exit 1
     fi
 else
     echo "エラー: 失敗"
     echo "詳細: $result"
+    exit 1
 fi
 
 echo

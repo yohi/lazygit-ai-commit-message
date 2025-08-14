@@ -16,18 +16,22 @@ echo
 
 # Gemini CLI確認
 echo "2. Gemini CLI バイナリ確認"
-echo "- パス: $(which gemini || echo 'NOT FOUND')"
-echo "- バージョン: $(gemini --version 2>/dev/null || echo 'バージョン取得失敗')"
-echo "- ファイル情報: $(ls -la $(which gemini) 2>/dev/null || echo 'ファイル情報取得失敗')"
+gemini_path=$(command -v gemini 2>/dev/null)
+if [[ -n "$gemini_path" ]]; then
+    echo "- パス: $gemini_path"
+    echo "- バージョン: $(gemini --version 2>/dev/null || echo 'バージョン取得失敗')"
+    echo "- ファイル情報: $(ls -la "$gemini_path" 2>/dev/null || echo 'ファイル情報取得失敗')"
+else
+    echo "- パス: NOT FOUND"
+    echo "- バージョン: バージョン取得失敗"
+    echo "- ファイル情報: ファイル情報取得失敗"
+fi
 echo
 
 # API キー確認
 echo "3. API キー確認"
 if [[ -n "${GEMINI_API_KEY:-}" ]]; then
     echo "- 設定状況: ✅ 設定済み"
-    echo "- 長さ: ${#GEMINI_API_KEY} 文字"
-    echo "- 先頭10文字: ${GEMINI_API_KEY:0:10}..."
-    echo "- 末尾4文字: ...${GEMINI_API_KEY: -4}"
 else
     echo "- 設定状況: ❌ 未設定"
     echo "設定方法: export GEMINI_API_KEY=\"your-api-key\""
