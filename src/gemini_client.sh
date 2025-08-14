@@ -29,9 +29,9 @@ check_gemini_cli() {
     if ! command -v "$gemini_cmd" >/dev/null 2>&1; then
         log_error "Gemini CLIがインストールされていません"
         echo "エラー: ${gemini_cmd}がインストールされていません" >&2
-        echo "インストール方法:" >&2
+        echo "推奨インストール方法（Node.js環境）:" >&2
         echo "  npm install -g @google/generative-ai-cli" >&2
-        echo "または" >&2
+        echo "代替方法（Python環境）:" >&2
         echo "  pip install google-generativeai-cli" >&2
         return 1
     fi
@@ -266,7 +266,7 @@ generate_commit_message() {
         max_tokens=$(echo "$config" | jq -r '.gemini.max_tokens // 100')
         timeout=$(echo "$config" | jq -r '.gemini.timeout // 30')
         language=$(echo "$config" | jq -r '.commit_message.language // "ja"')
-        max_length=$(echo "$config" | jq -r '.commit_message.max_length // 72')
+        max_length=$(echo "$config" | jq -r '.commit_message.max_length // 50')
     else
         # jqが使用できない場合のデフォルト値
         model="gemini-pro"
@@ -274,7 +274,7 @@ generate_commit_message() {
         max_tokens="100"
         timeout="30"
         language="ja"
-        max_length="72"
+        max_length="50"
     fi
     
     # Gemini CLIチェック
