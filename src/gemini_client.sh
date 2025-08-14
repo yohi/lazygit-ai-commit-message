@@ -7,6 +7,18 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "${SCRIPT_DIR}/logger.sh"
 source "${SCRIPT_DIR}/config_loader.sh"
 
+# timeoutコマンドの可用性チェック
+TIMEOUT_CMD=""
+if command -v timeout >/dev/null 2>&1; then
+    TIMEOUT_CMD="timeout"
+elif command -v gtimeout >/dev/null 2>&1; then
+    TIMEOUT_CMD="gtimeout"
+else
+    log_error "timeout または gtimeout コマンドが見つかりません"
+    echo "エラー: timeout コマンドが利用できません。Homebrew で coreutils をインストールしてください。" >&2
+    echo "インストール方法: brew install coreutils" >&2
+fi
+
 # Gemini CLIが利用可能かチェック
 check_gemini_cli() {
     log_debug "Gemini CLIの存在確認中..."
@@ -70,6 +82,71 @@ get_gemini_command() {
     echo "gemini"
 }
 
+# Geminiエラーハンドリング関数
+handle_gemini_error() {
+    local exit_code="$1"
+    local error_output="$2"
+    local result="$3"
+    local timeout="$4"
+    local prompt="$5"
+    
+    # タイムアウトでもレスポンスがある場合は成功とみなす
+    if [[ $exit_code -eq 124 ]] && [[ -n "$result" ]] && [[ ${#result} -gt 10 ]]; then
+        log_debug "タイムアウトだがレスポンス取得成功: ${#result} 文字"
+        rm -f "$temp_output" "$error_file"
+        echo "$result"
+        return 0
+    fi
+    
+    log_error "Gemini CLI実行が失敗"
+    log_debug "終了コード: $exit_code"
+    log_debug "エラー出力の長さ: ${#error_output} 文字"
+    log_debug "エラー出力: $error_output"
+    
+    # APIキーの状態を確認
+    if [[ -n "${GEMINI_API_KEY:-}" ]]; then
+        log_debug "APIキー設定状況: 設定済み（長さ: ${#GEMINI_API_KEY} 文字）"
+    else
+        log_debug "APIキー設定状況: 未設定"
+    fi
+    
+    # 実行環境の詳細をログ
+    log_debug "実行環境: $0"
+    log_debug "親プロセス: $(ps -o comm= -p $PPID 2>/dev/null || echo 'unknown')"
+    log_debug "環境変数PATH: $PATH"
+    log_debug "Gemini CLIパス: $(command -v gemini 2>/dev/null || echo 'not found')"
+    
+    # プロンプトの詳細をログ
+    log_debug "プロンプト長: ${#prompt} 文字"
+    log_debug "プロンプト先頭50文字: ${prompt:0:50}..."
+    
+    # エラー詳細を分析
+    case $exit_code in
+        124)
+            log_error "Gemini API呼び出しがタイムアウトしました"
+            echo "エラー: APIリクエストがタイムアウトしました（${timeout}秒）" >&2
+            ;;
+        1)
+            log_error "Gemini CLI実行エラー"
+            echo "エラー: Gemini CLI実行に失敗しました" >&2
+            echo "詳細: $error_output" >&2
+            ;;
+        127)
+            log_error "Gemini CLIが見つかりません"
+            echo "エラー: geminiコマンドが見つかりません" >&2
+            ;;
+        *)
+            log_error "予期しないエラー（終了コード: $exit_code）"
+            echo "エラー: 予期しないエラーが発生しました" >&2
+            echo "終了コード: $exit_code" >&2
+            echo "詳細: $error_output" >&2
+            ;;
+    esac
+    
+    rm -f "$temp_output" "$error_file"
+    return 1
+}
+
 # Gemini CLIを実行
 call_gemini_cli() {
     local prompt="$1"
@@ -93,12 +170,27 @@ call_gemini_cli() {
     # Gemini CLIを実行（ログ出力を完全に分離）
     # Docker環境では--promptオプションを使用（stdin使用でハングするため）
     local temp_output=$(mktemp)
-    if (timeout "${timeout}" "$(get_gemini_command)" --prompt="$prompt" 2>"$error_file") >"$temp_output"; then
-        result=$(cat "$temp_output")
-        rm -f "$temp_output"
-        log_debug "成功: --promptオプション"
-        log_debug "レスポンス長: ${#result} 文字"
+    if [[ -n "$TIMEOUT_CMD" ]]; then
+        if ("$TIMEOUT_CMD" "${timeout}" "$(get_gemini_command)" --prompt="$prompt" 2>"$error_file") >"$temp_output"; then
+            result=$(cat "$temp_output")
+            rm -f "$temp_output"
+            log_debug "成功: --promptオプション（timeoutあり）"
+            log_debug "レスポンス長: ${#result} 文字"
+        else
+            exit_code=$?
+            local error_output=$(cat "$error_file" 2>/dev/null || echo "")
+            result=$(cat "$temp_output" 2>/dev/null || echo "")
+            handle_gemini_error "$exit_code" "$error_output" "$result" "$timeout" "$prompt"
+        fi
     else
+        # timeout コマンドが利用できない場合のfallback
+        log_debug "timeoutコマンドが利用できないため、通常実行します"
+        if ("$(get_gemini_command)" --prompt="$prompt" 2>"$error_file") >"$temp_output"; then
+            result=$(cat "$temp_output")
+            rm -f "$temp_output"
+            log_debug "成功: --promptオプション（timeoutなし）"
+            log_debug "レスポンス長: ${#result} 文字"
+        else
         exit_code=$?
         local error_output=$(cat "$error_file" 2>/dev/null || echo "")
         result=$(cat "$temp_output" 2>/dev/null || echo "")

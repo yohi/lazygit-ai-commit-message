@@ -264,19 +264,30 @@ uninstall() {
     
     # 設定ディレクトリ（ユーザーに確認）
     if [[ -d "$CONFIG_DIR" ]]; then
-        read -p "設定ディレクトリも削除しますか？ [y/N]: " -r
-        if [[ $REPLY =~ ^[Yy]$ ]]; then
-            rm -rf "$CONFIG_DIR"
-            log_success "設定ディレクトリを削除しました"
+        if [[ -t 0 ]]; then
+            if read -p "設定ディレクトリも削除しますか？ [y/N]: " -r; then
+                if [[ $REPLY =~ ^[Yy]$ ]]; then
+                    rm -rf "$CONFIG_DIR"
+                    log_success "設定ディレクトリを削除しました"
+                else
+                    log_info "設定ディレクトリは保持されました: $CONFIG_DIR"
+                fi
+            else
+                log_info "設定ディレクトリは保持されました: $CONFIG_DIR"
+            fi
         else
-            log_info "設定ディレクトリは保持されました: $CONFIG_DIR"
+            log_info "非対話モード: 設定ディレクトリは保持されました: $CONFIG_DIR"
         fi
     fi
     
     # Lazygit設定（ユーザーに確認）
     local lazygit_config="$LAZYGIT_CONFIG_DIR/config.yml"
     if [[ -f "$lazygit_config" ]] && grep -q "ai-commit-generator" "$lazygit_config" 2>/dev/null; then
-        read -p "Lazygit設定からAI Commit Generatorの設定を削除しますか？ [y/N]: " -r
+        if [[ -t 0 ]]; then
+            read -p "Lazygit設定からAI Commit Generatorの設定を削除しますか？ [y/N]: " -r || REPLY=""
+        else
+            REPLY="N"
+        fi
         if [[ $REPLY =~ ^[Yy]$ ]]; then
             # バックアップを作成
             cp "$lazygit_config" "$lazygit_config.backup.$(date +%Y%m%d_%H%M%S)"

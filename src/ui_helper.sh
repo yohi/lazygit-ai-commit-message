@@ -14,21 +14,22 @@ SPINNER_CHARS="⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
 # スピナーを開始
 start_spinner() {
     local message="${1:-処理中...}"
-    local config
     local show_spinner
-    config=$(load_config)
-    show_spinner=$(get_config_value ".ui.show_spinner" "true" <<< "$config")
+    show_spinner=$(get_config_value ".ui.show_spinner" "true")
     
     if [[ "$show_spinner" != "true" ]]; then
         echo "$message"
         return 0
     fi
     
+    # カーソルを隠す
+    tput civis 2>/dev/null || printf "\033[?25l" >&2
+    
     {
         local i=0
         while true; do
             local char="${SPINNER_CHARS:$((i % ${#SPINNER_CHARS})):1}"
-            printf "\r%s %s" "$char" "$message"
+            printf "\r%s %s" "$char" "$message" >&2
             sleep 0.1
             ((i++))
         done
@@ -44,7 +45,9 @@ stop_spinner() {
         kill "$SPINNER_PID" 2>/dev/null || true
         wait "$SPINNER_PID" 2>/dev/null || true
         SPINNER_PID=""
-        printf "\r"
+        # 行をクリアしてカーソルを表示
+        printf "\r\033[K" >&2
+        tput cnorm 2>/dev/null || printf "\033[?25h" >&2
         log_debug "スピナーを停止しました"
     fi
 }
@@ -53,10 +56,8 @@ stop_spinner() {
 show_confirmation() {
     local title="$1"
     local message="$2"
-    local config
     local confirmation_required
-    config=$(load_config)
-    confirmation_required=$(get_config_value ".ui.confirmation_required" "true" <<< "$config")
+    confirmation_required=$(get_config_value ".ui.confirmation_required" "true")
     
     if [[ "$confirmation_required" != "true" ]]; then
         return 0
