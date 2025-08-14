@@ -166,6 +166,29 @@ EOF
 EOF
             ;;
             
+        "${ERROR_CODES["CONFIG_NOT_FOUND"]}")
+            cat <<EOF
+❌ 設定ファイルが見つかりません
+
+初回セットアップ手順:
+  1. 設定ディレクトリを作成:
+     mkdir -p ~/.config/ai-commit-generator
+     
+  2. サンプル設定ファイルを生成:
+     ai-commit-generator --generate-sample-config
+     
+  3. 設定ファイルを編集（オプション）:
+     ~/.config/ai-commit-generator/config/default.yml
+     
+  4. Gemini APIキーを設定:
+     export GEMINI_API_KEY="your-api-key"
+
+💡 設定ファイルがなくてもデフォルト設定で動作します
+
+設定ファイルの場所: $context
+EOF
+            ;;
+            
         "${ERROR_CODES["NETWORK_CONNECTION"]}")
             cat <<EOF
 ❌ ネットワーク接続エラー
