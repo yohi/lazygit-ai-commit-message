@@ -19,7 +19,8 @@ run_test() {
     echo -n "Testing: $test_name ... "
     TESTS_RUN=$((TESTS_RUN + 1))
     
-    if $test_function; then
+    local exit_status
+    if (exit_status=$($test_function; echo $?)) && [[ $exit_status -eq 0 ]]; then
         echo "PASS"
         TESTS_PASSED=$((TESTS_PASSED + 1))
     else
@@ -51,7 +52,7 @@ assert_contains() {
     local pattern="$2"
     local message="${3:-}"
     
-    if echo "$text" | grep -q "$pattern"; then
+    if echo "$text" | grep -F -q "$pattern"; then
         return 0
     else
         if [[ -n "$message" ]]; then
@@ -75,9 +76,6 @@ setup_test_repo() {
     git config user.email "test@example.com"
     git config user.name "Test User"
     
-    # クリーンアップ用の関数を設定
-    trap "popd >/dev/null 2>&1; rm -rf '$test_repo_dir'" EXIT
-    
     echo "$test_repo_dir"
 }
 
@@ -91,7 +89,9 @@ cleanup_test_repo() {
 
 # テスト: ファイルタイプ識別
 test_file_type_detection() {
-    local test_repo=$(setup_test_repo)
+    local test_repo
+    test_repo=$(setup_test_repo)
+    trap 'cleanup_test_repo "$test_repo"' RETURN
     
     # テストファイルを作成
     echo "console.log('hello');" > test.js
@@ -116,7 +116,9 @@ test_file_type_detection() {
 
 # テスト: 変更統計
 test_change_statistics() {
-    local test_repo=$(setup_test_repo)
+    local test_repo
+    test_repo=$(setup_test_repo)
+    trap 'cleanup_test_repo "$test_repo"' RETURN
     
     # 初期ファイルを作成してコミット
     echo "line 1" > test.txt
@@ -147,7 +149,9 @@ test_change_statistics() {
 
 # テスト: 空のdiffエラーハンドリング
 test_empty_diff_handling() {
-    local test_repo=$(setup_test_repo)
+    local test_repo
+    test_repo=$(setup_test_repo)
+    trap 'cleanup_test_repo "$test_repo"' RETURN
     
     # ファイルを作成するがステージしない
     echo "test content" > test.txt
@@ -164,7 +168,9 @@ test_empty_diff_handling() {
 
 # テスト: 複数ファイル変更
 test_multiple_file_changes() {
-    local test_repo=$(setup_test_repo)
+    local test_repo
+    test_repo=$(setup_test_repo)
+    trap 'cleanup_test_repo "$test_repo"' RETURN
     
     # 複数ファイルを作成
     echo "function test() {}" > script.js

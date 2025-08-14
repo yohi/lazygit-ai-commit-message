@@ -66,7 +66,11 @@ show_confirmation() {
     echo "=== $title ==="
     echo "$message"
     echo
-    read -p "続行しますか？ [y/N]: " -r
+    
+    if ! read -p "続行しますか？ [y/N]: " -r; then
+        log_info "入力がキャンセルされました"
+        return 1
+    fi
     
     if [[ ! $REPLY =~ ^[Yy]$ ]]; then
         log_info "ユーザーによってキャンセルされました"
@@ -109,6 +113,11 @@ show_progress() {
     local current="$1"
     local total="$2"
     local message="${3:-}"
+    
+    if [[ $total -eq 0 ]]; then
+        echo "プログレス: アイテムなし"
+        return 0
+    fi
     
     local percentage=$((current * 100 / total))
     local bar_length=20
@@ -158,13 +167,13 @@ setup_signal_handlers() {
 
 # エラーハンドリング付きでコマンドを実行
 run_with_spinner() {
-    local command="$1"
-    local message="$2"
+    local message="$1"
+    shift
     
     start_spinner "$message"
     
     local result
-    if result=$(eval "$command" 2>&1); then
+    if result=$("$@" 2>&1); then
         stop_spinner
         show_success "完了"
         echo "$result"

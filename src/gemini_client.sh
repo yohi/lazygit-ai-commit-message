@@ -14,9 +14,9 @@ if command -v timeout >/dev/null 2>&1; then
 elif command -v gtimeout >/dev/null 2>&1; then
     TIMEOUT_CMD="gtimeout"
 else
-    log_error "timeout または gtimeout コマンドが見つかりません"
-    echo "エラー: timeout コマンドが利用できません。Homebrew で coreutils をインストールしてください。" >&2
-    echo "インストール方法: brew install coreutils" >&2
+    log_warn "timeout または gtimeout コマンドが見つかりません"
+    echo "警告: timeout コマンドが利用できません。タイムアウトなしで続行します。" >&2
+    echo "改善方法: brew install coreutils" >&2
 fi
 
 # Gemini CLIが利用可能かチェック
@@ -105,7 +105,7 @@ handle_gemini_error() {
     
     # APIキーの状態を確認
     if [[ -n "${GEMINI_API_KEY:-}" ]]; then
-        log_debug "APIキー設定状況: 設定済み（長さ: ${#GEMINI_API_KEY} 文字）"
+        log_debug "APIキー設定状況: 設定済み"
     else
         log_debug "APIキー設定状況: 未設定"
     fi
@@ -158,7 +158,12 @@ call_gemini_cli() {
     log_debug "Gemini CLI実行中（モデル: ${model}）..."
     
     # エラー出力を一時ファイルに保存
-    local error_file=$(mktemp)
+    local error_file
+    error_file=$(mktemp)
+    if [[ ! -f "$error_file" ]]; then
+        log_error "mktempで一時ファイルの作成に失敗しました"
+        return 1
+    fi
     
     # Gemini CLIを実行（このCLIは標準入力とプロンプトオプションをサポート）
     local result=""
@@ -169,7 +174,13 @@ call_gemini_cli() {
     
     # Gemini CLIを実行（ログ出力を完全に分離）
     # Docker環境では--promptオプションを使用（stdin使用でハングするため）
-    local temp_output=$(mktemp)
+    local temp_output
+    temp_output=$(mktemp)
+    if [[ ! -f "$temp_output" ]]; then
+        log_error "mktempで一時ファイルの作成に失敗しました"
+        rm -f "$error_file"
+        return 1
+    fi
     if [[ -n "$TIMEOUT_CMD" ]]; then
         if ("$TIMEOUT_CMD" "${timeout}" "$(get_gemini_command)" --prompt="$prompt" 2>"$error_file") >"$temp_output"; then
             result=$(cat "$temp_output")
@@ -180,7 +191,12 @@ call_gemini_cli() {
             exit_code=$?
             local error_output=$(cat "$error_file" 2>/dev/null || echo "")
             result=$(cat "$temp_output" 2>/dev/null || echo "")
-            handle_gemini_error "$exit_code" "$error_output" "$result" "$timeout" "$prompt"
+            if handle_gemini_error "$exit_code" "$error_output" "$result" "$timeout" "$prompt"; then
+                echo "$result"
+                return 0
+            else
+                return $exit_code
+            fi
         fi
     else
         # timeout コマンドが利用できない場合のfallback
@@ -191,87 +207,16 @@ call_gemini_cli() {
             log_debug "成功: --promptオプション（timeoutなし）"
             log_debug "レスポンス長: ${#result} 文字"
         else
-        exit_code=$?
-        local error_output=$(cat "$error_file" 2>/dev/null || echo "")
-        result=$(cat "$temp_output" 2>/dev/null || echo "")
-        
-        # タイムアウトでもレスポンスがある場合は成功とみなす
-        if [[ $exit_code -eq 124 ]] && [[ -n "$result" ]] && [[ ${#result} -gt 10 ]]; then
-            log_debug "タイムアウトだがレスポンス取得成功: ${#result} 文字"
-            rm -f "$temp_output" "$error_file"
-            echo "$result"
-            return 0
+            exit_code=$?
+            local error_output=$(cat "$error_file" 2>/dev/null || echo "")
+            result=$(cat "$temp_output" 2>/dev/null || echo "")
+            if handle_gemini_error "$exit_code" "$error_output" "$result" "$timeout" "$prompt"; then
+                echo "$result"
+                return 0
+            else
+                return $exit_code
+            fi
         fi
-        
-        log_error "Gemini CLI実行が失敗"
-        log_debug "終了コード: $exit_code"
-        log_debug "エラー出力の長さ: ${#error_output} 文字"
-        log_debug "エラー出力: $error_output"
-        
-        # APIキーの状態を確認
-        if [[ -n "${GEMINI_API_KEY:-}" ]]; then
-            log_debug "APIキー設定状況: 設定済み（長さ: ${#GEMINI_API_KEY} 文字）"
-        else
-            log_debug "APIキー設定状況: 未設定"
-        fi
-        
-        # 実行環境の詳細をログ
-        log_debug "実行環境: $0"
-        log_debug "親プロセス: $(ps -o comm= -p $PPID 2>/dev/null || echo 'unknown')"
-        log_debug "環境変数PATH: $PATH"
-        log_debug "Gemini CLIパス: $(which gemini 2>/dev/null || echo 'not found')"
-        
-        # プロンプトの詳細をログ
-        log_debug "プロンプト長: ${#prompt} 文字"
-        log_debug "プロンプト先頭50文字: ${prompt:0:50}..."
-        
-        # エラー詳細を分析
-        case $exit_code in
-            124)
-                log_error "Gemini API呼び出しがタイムアウトしました"
-                echo "エラー: APIリクエストがタイムアウトしました（${timeout}秒）" >&2
-                ;;
-            1)
-                if echo "$error_output" | grep -i "api.*key\|credentials\|auth" >/dev/null; then
-                    log_error "APIキーエラー"
-                    echo "エラー: APIキーが設定されていないか無効です" >&2
-                    echo "現在のAPIキー設定: ${GEMINI_API_KEY:+設定済み}" >&2
-                    echo "設定方法: export GEMINI_API_KEY=\"your-api-key\"" >&2
-                elif echo "$error_output" | grep -i "rate.*limit\|quota\|limit.*exceeded" >/dev/null; then
-                    log_error "レート制限エラー"
-                    echo "エラー: APIレート制限に達しました" >&2
-                    echo "しばらく待ってから再試行してください" >&2
-                elif echo "$error_output" | grep -i "model.*not.*found\|invalid.*model" >/dev/null; then
-                    log_error "モデルエラー"
-                    echo "エラー: 指定されたモデル（$model）が利用できません" >&2
-                    echo "利用可能なモデルを確認してください" >&2
-                else
-                    log_error "Gemini CLI実行エラー"
-                    echo "エラー: Gemini CLIの実行に失敗しました" >&2
-                    echo "実行環境: Docker コンテナ内" >&2
-                    echo "デバッグのため以下を実行してください:" >&2
-                    echo "  ./scripts/debug_gemini.sh" >&2
-                    if [[ -n "$error_output" ]]; then
-                        echo "詳細: $error_output" >&2
-                    fi
-                fi
-                ;;
-            127)
-                log_error "コマンドが見つかりません"
-                echo "エラー: Gemini CLIコマンドが見つかりません" >&2
-                ;;
-            *)
-                log_error "予期しないエラー（終了コード: ${exit_code}）"
-                echo "エラー: 予期しないエラーが発生しました" >&2
-                if [[ -n "$error_output" ]]; then
-                    echo "詳細: $error_output" >&2
-                fi
-                ;;
-        esac
-        
-        # 一時ファイルをクリーンアップ
-        rm -f "$temp_output" "$error_file"
-        return $exit_code
     fi
     
     # 一時ファイルをクリーンアップ
@@ -337,11 +282,13 @@ generate_commit_message() {
     fi
     
     # プロンプト生成
-    local prompt=$(generate_prompt "$diff_content" "$file_analysis" "$language")
+    local prompt
+    prompt=$(generate_prompt "$diff_content" "$file_analysis" "$language")
     
     # Gemini CLI実行
     local response
-    if ! response=$(call_gemini_cli "$prompt" "$model" "$temperature" "$max_tokens" "$timeout"); then
+    response=$(call_gemini_cli "$prompt" "$model" "$temperature" "$max_tokens" "$timeout")
+    if [[ $? -ne 0 ]]; then
         return 1
     fi
     
