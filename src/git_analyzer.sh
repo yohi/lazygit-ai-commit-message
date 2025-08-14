@@ -61,7 +61,8 @@ analyze_files() {
             js|jsx|ts|tsx) file_type="javascript" ;;
             py) file_type="python" ;;
             java) file_type="java" ;;
-            c|cpp|cc|cxx) file_type="c++" ;;
+            c) file_type="c" ;;
+            cpp|cc|cxx) file_type="c++" ;;
             h|hpp) file_type="header" ;;
             sh|bash) file_type="shell" ;;
             yml|yaml) file_type="yaml" ;;

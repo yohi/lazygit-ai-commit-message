@@ -19,8 +19,16 @@ run_test() {
     echo -n "Testing: $test_name ... "
     TESTS_RUN=$((TESTS_RUN + 1))
     
+    # サブシェルでテストを実行して分離し、終了コードを取得
     local exit_status
-    if (exit_status=$($test_function; echo $?)) && [[ $exit_status -eq 0 ]]; then
+    if ( $test_function ) ; then
+        exit_status=0
+    else
+        exit_status=$?
+    fi
+    
+    # 親シェルでカウンタを更新
+    if [[ $exit_status -eq 0 ]]; then
         echo "PASS"
         TESTS_PASSED=$((TESTS_PASSED + 1))
     else
@@ -108,7 +116,7 @@ test_file_type_detection() {
     # 結果をチェック
     assert_contains "$result" "javascript" "JavaScript ファイルが検出されない"
     assert_contains "$result" "python" "Python ファイルが検出されない"
-    assert_contains "$result" "c++" "C ファイルが検出されない"
+    assert_contains "$result" "c" "C ファイルが検出されない"
     assert_contains "$result" "markdown" "Markdown ファイルが検出されない"
     
     cleanup_test_repo "$test_repo"
@@ -200,17 +208,25 @@ test_multiple_file_changes() {
 
 # テスト: Git リポジトリではない場所での実行
 test_non_git_repository() {
-    local temp_dir="/tmp/non_git_$$"
-    mkdir -p "$temp_dir"
-    cd "$temp_dir"
+    local original_dir
+    original_dir=$(pwd)
+    local temp_dir
+    temp_dir=$(mktemp -d)
+    
+    # 失敗時のクリーンアップ用trap設定
+    trap 'cd "$original_dir"; cleanup_test_repo "$temp_dir"' RETURN
+    
+    # 非gitディレクトリに移動
+    pushd "$temp_dir" >/dev/null
     
     # Git analyzer を実行（失敗すべき）
     if source "${SRC_DIR}/git_analyzer.sh" && main >/dev/null 2>&1; then
-        cleanup_test_repo "$temp_dir"
+        popd >/dev/null
         return 1  # テスト失敗
     fi
     
-    cleanup_test_repo "$temp_dir"
+    # 元のディレクトリに戻る
+    popd >/dev/null
     return 0  # テスト成功
 }
 

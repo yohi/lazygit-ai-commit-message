@@ -9,7 +9,18 @@ source "${SCRIPT_DIR}/config_loader.sh"
 
 # スピナー関連
 SPINNER_PID=""
-SPINNER_CHARS="⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
+# UTF-8スピナーフレーム
+SPINNER_FRAMES_UTF8=( "⠋" "⠙" "⠹" "⠸" "⠼" "⠴" "⠦" "⠧" "⠇" "⠏" )
+# ASCII代替フレーム
+SPINNER_FRAMES_ASCII=( "|" "/" "-" "\\" )
+
+# UTF-8サポートを検出
+is_utf8_supported() {
+    case "${LC_CTYPE:-${LANG:-}}" in
+        *UTF-8*|*utf8*) return 0 ;;
+        *) return 1 ;;
+    esac
+}
 
 # スピナーを開始
 start_spinner() {
@@ -27,8 +38,15 @@ start_spinner() {
     
     {
         local i=0
+        local frames
+        if is_utf8_supported; then
+            frames=( "${SPINNER_FRAMES_UTF8[@]}" )
+        else
+            frames=( "${SPINNER_FRAMES_ASCII[@]}" )
+        fi
+        
         while true; do
-            local char="${SPINNER_CHARS:$((i % ${#SPINNER_CHARS})):1}"
+            local char="${frames[$((i % ${#frames[@]}))]}"
             printf "\r%s %s" "$char" "$message" >&2
             sleep 0.1
             ((i++))
@@ -114,9 +132,26 @@ show_progress() {
     local total="$2"
     local message="${3:-}"
     
+    # 入力値検証
+    if [[ ! "$total" =~ ^[0-9]+$ ]] || [[ "$total" -lt 0 ]]; then
+        echo "エラー: totalは非負の整数である必要があります" >&2
+        return 1
+    fi
+    
+    if [[ ! "$current" =~ ^[0-9]+$ ]] || [[ "$current" -lt 0 ]]; then
+        echo "エラー: currentは非負の整数である必要があります" >&2
+        return 1
+    fi
+    
+    # 特別ケース: total=0
     if [[ $total -eq 0 ]]; then
-        echo "プログレス: アイテムなし"
+        printf "プログレス: アイテムなし\n" >&2
         return 0
+    fi
+    
+    # currentがtotalを超えないようにする
+    if [[ $current -gt $total ]]; then
+        current="$total"
     fi
     
     local percentage=$((current * 100 / total))
@@ -131,10 +166,10 @@ show_progress() {
         bar+="░"
     done
     
-    printf "\r[%s] %d%% %s" "$bar" "$percentage" "$message"
+    printf "\r[%s] %d%% %s" "$bar" "$percentage" "$message" >&2
     
     if [[ $current -eq $total ]]; then
-        echo
+        echo >&2
     fi
 }
 
@@ -170,18 +205,56 @@ run_with_spinner() {
     local message="$1"
     shift
     
+    # 一時ファイルを作成
+    local temp_file
+    temp_file=$(mktemp)
+    if [[ ! -f "$temp_file" ]]; then
+        echo "エラー: 一時ファイルの作成に失敗しました" >&2
+        return 1
+    fi
+    
+    # クリーンアップ用のtrap設定
+    trap 'rm -f "$temp_file"' EXIT INT TERM
+    
     start_spinner "$message"
     
-    local result
-    if result=$("$@" 2>&1); then
-        stop_spinner
+    # コマンドを実行し、出力を一時ファイルに保存
+    local exit_code=0
+    if ! "$@" >"$temp_file" 2>&1; then
+        exit_code=$?
+    fi
+    
+    stop_spinner
+    
+    if [[ $exit_code -eq 0 ]]; then
         show_success "完了"
-        echo "$result"
+        # 一時ファイルの内容を出力（改行を保持）
+        cat "$temp_file"
+        rm -f "$temp_file"
+        trap - EXIT INT TERM
         return 0
     else
-        stop_spinner
-        show_error "失敗: $result"
-        return 1
+        # エラー時は内容を確認し、適切にハンドリング
+        local content
+        content=$(cat "$temp_file" 2>/dev/null || echo "")
+        
+        # ファイルサイズが大きい場合は先頭と末尾のみ表示
+        local content_length=${#content}
+        if [[ $content_length -gt 10000 ]]; then
+            show_error "失敗（出力が大きいため先頭と末尾のみ表示）:"
+            echo "=== 先頭1000文字 ===" >&2
+            echo "${content:0:1000}" >&2
+            echo "=== 末尾1000文字 ===" >&2
+            echo "${content: -1000}" >&2
+        elif [[ -n "$content" ]]; then
+            show_error "失敗: $content"
+        else
+            show_error "失敗（出力なし）"
+        fi
+        
+        rm -f "$temp_file"
+        trap - EXIT INT TERM
+        return $exit_code
     fi
 }
 

@@ -23,9 +23,12 @@ fi
 check_gemini_cli() {
     log_debug "Gemini CLIの存在確認中..."
     
-    if ! command -v gemini >/dev/null 2>&1; then
+    local gemini_cmd
+    gemini_cmd="$(get_gemini_command)"
+    
+    if ! command -v "$gemini_cmd" >/dev/null 2>&1; then
         log_error "Gemini CLIがインストールされていません"
-        echo "エラー: Gemini CLIがインストールされていません" >&2
+        echo "エラー: ${gemini_cmd}がインストールされていません" >&2
         echo "インストール方法:" >&2
         echo "  npm install -g @google/generative-ai-cli" >&2
         echo "または" >&2
@@ -93,7 +96,6 @@ handle_gemini_error() {
     # タイムアウトでもレスポンスがある場合は成功とみなす
     if [[ $exit_code -eq 124 ]] && [[ -n "$result" ]] && [[ ${#result} -gt 10 ]]; then
         log_debug "タイムアウトだがレスポンス取得成功: ${#result} 文字"
-        rm -f "$temp_output" "$error_file"
         echo "$result"
         return 0
     fi
@@ -114,7 +116,7 @@ handle_gemini_error() {
     log_debug "実行環境: $0"
     log_debug "親プロセス: $(ps -o comm= -p $PPID 2>/dev/null || echo 'unknown')"
     log_debug "環境変数PATH: $PATH"
-    log_debug "Gemini CLIパス: $(command -v gemini 2>/dev/null || echo 'not found')"
+    log_debug "Gemini CLIパス: $(command -v "$(get_gemini_command)" 2>/dev/null || echo 'not found')"
     
     # プロンプトの詳細をログ
     log_debug "プロンプト長: ${#prompt} 文字"
@@ -133,7 +135,7 @@ handle_gemini_error() {
             ;;
         127)
             log_error "Gemini CLIが見つかりません"
-            echo "エラー: geminiコマンドが見つかりません" >&2
+            echo "エラー: $(get_gemini_command)コマンドが見つかりません" >&2
             ;;
         *)
             log_error "予期しないエラー（終了コード: $exit_code）"
@@ -143,7 +145,6 @@ handle_gemini_error() {
             ;;
     esac
     
-    rm -f "$temp_output" "$error_file"
     return 1
 }
 
@@ -184,15 +185,16 @@ call_gemini_cli() {
     if [[ -n "$TIMEOUT_CMD" ]]; then
         if ("$TIMEOUT_CMD" "${timeout}" "$(get_gemini_command)" --prompt="$prompt" 2>"$error_file") >"$temp_output"; then
             result=$(cat "$temp_output")
-            rm -f "$temp_output"
+            rm -f "$temp_output" "$error_file"
             log_debug "成功: --promptオプション（timeoutあり）"
             log_debug "レスポンス長: ${#result} 文字"
         else
             exit_code=$?
-            local error_output=$(cat "$error_file" 2>/dev/null || echo "")
+            local error_output=""
+            error_output=$(cat "$error_file" 2>/dev/null || echo "")
             result=$(cat "$temp_output" 2>/dev/null || echo "")
+            rm -f "$temp_output" "$error_file"
             if handle_gemini_error "$exit_code" "$error_output" "$result" "$timeout" "$prompt"; then
-                echo "$result"
                 return 0
             else
                 return $exit_code
@@ -203,24 +205,22 @@ call_gemini_cli() {
         log_debug "timeoutコマンドが利用できないため、通常実行します"
         if ("$(get_gemini_command)" --prompt="$prompt" 2>"$error_file") >"$temp_output"; then
             result=$(cat "$temp_output")
-            rm -f "$temp_output"
+            rm -f "$temp_output" "$error_file"
             log_debug "成功: --promptオプション（timeoutなし）"
             log_debug "レスポンス長: ${#result} 文字"
         else
             exit_code=$?
-            local error_output=$(cat "$error_file" 2>/dev/null || echo "")
+            local error_output=""
+            error_output=$(cat "$error_file" 2>/dev/null || echo "")
             result=$(cat "$temp_output" 2>/dev/null || echo "")
+            rm -f "$temp_output" "$error_file"
             if handle_gemini_error "$exit_code" "$error_output" "$result" "$timeout" "$prompt"; then
-                echo "$result"
                 return 0
             else
                 return $exit_code
             fi
         fi
     fi
-    
-    # 一時ファイルをクリーンアップ
-    rm -f "$temp_output" "$error_file"
     
     # 結果を出力
     echo "$result"
@@ -256,7 +256,8 @@ generate_commit_message() {
     log_info "Gemini CLIを使用してコミットメッセージを生成中..."
     
     # 設定を読み込み
-    local config=$(load_config)
+    local config=""
+    config=$(load_config)
     local model temperature max_tokens timeout language max_length
     
     if command -v jq >/dev/null 2>&1; then
@@ -283,12 +284,11 @@ generate_commit_message() {
     
     # プロンプト生成
     local prompt
-    prompt=$(generate_prompt "$diff_content" "$file_analysis" "$language")
+    prompt="$(generate_prompt "$diff_content" "$file_analysis" "$language")"
     
     # Gemini CLI実行
     local response
-    response=$(call_gemini_cli "$prompt" "$model" "$temperature" "$max_tokens" "$timeout")
-    if [[ $? -ne 0 ]]; then
+    if ! response="$(call_gemini_cli "$prompt" "$model" "$temperature" "$max_tokens" "$timeout")"; then
         return 1
     fi
     
