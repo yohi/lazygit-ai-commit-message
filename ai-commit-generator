@@ -225,7 +225,7 @@ main_process() {
     if ! commit_message=$(generate_commit_message "$diff_content" "$file_analysis" 2>/dev/null); then
         stop_spinner
         handle_recoverable_error "${ERROR_CODES["GEMINI_API_ERROR"]}" \
-            "手動でコミットメッセージを入力してください"
+            "手動でコミットメッセージを入力してください" || true
         exit "${ERROR_CODES["GEMINI_API_ERROR"]}"
     fi
     

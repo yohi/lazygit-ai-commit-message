@@ -1,5 +1,20 @@
 #!/bin/bash
-# エラーハンドリングシステム
+# エラーハンドリングライブラリ
+#
+# 使用方法:
+#   source error_handler.sh
+#   setup_error_handlers  # strict mode とエラートラップを有効化
+#
+# 注意事項:
+#   - このファイルをsourceしただけでは strict mode は有効になりません
+#   - 必ず setup_error_handlers 関数を呼び出してください
+#   - setup_error_handlers を呼び出すと set -euo pipefail が適用されます
+#
+# 例:
+#   #!/bin/bash
+#   source "$(dirname "$0")/error_handler.sh"
+#   setup_error_handlers
+#   # ここからstrict modeで実行される
 
 # Bash 4+ バージョンチェック
 if [[ "${BASH_VERSINFO[0]}" -lt 4 ]]; then
@@ -273,6 +288,9 @@ handle_error() {
 }
 
 # 回復可能なエラーハンドラー
+# 注意: この関数は非ゼロの戻り値を返すため、strict mode (set -e) 下では
+#       || true を付けて呼び出してください
+# 例: handle_recoverable_error "$error_code" "$context" "$recovery" || true
 handle_recoverable_error() {
     local error_code="$1"
     local context="${2:-}"
@@ -344,7 +362,7 @@ check_config_error() {
     
     if [[ ! -f "$config_file" ]]; then
         handle_recoverable_error "${ERROR_CODES["CONFIG_NOT_FOUND"]}" "$config_file" \
-            "デフォルト設定を使用します"
+            "デフォルト設定を使用します" || true
         return 0
     fi
     
@@ -353,14 +371,17 @@ check_config_error() {
     fi
 }
 
-# グローバルエラーハンドラー設定
+# エラーハンドラー初期化関数
+# 注意: この関数を呼び出すとstrict modeが有効になります
+# 使用方法: source error_handler.sh; setup_error_handlers
 setup_error_handlers() {
-    set -Eeuo pipefail
+    # strict modeを有効化（ソースする側に影響を与えないように関数内で設定）
+    set -euo pipefail
     
-    # ERRトラップを設定
+    # ERRトラップを設定（未処理エラーをキャッチ）
     trap 'handle_error ${ERROR_CODES["GENERIC_ERROR"]} "Line $LINENO in $BASH_SOURCE"' ERR
     
-    # シグナルハンドラー
+    # シグナルハンドラー（ユーザー割り込みや強制終了への対応）
     trap 'handle_error ${ERROR_CODES["GENERIC_ERROR"]} "Interrupted by user"' INT
     trap 'handle_error ${ERROR_CODES["GENERIC_ERROR"]} "Terminated"' TERM
 }
