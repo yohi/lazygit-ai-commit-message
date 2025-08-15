@@ -1,0 +1,24 @@
+# AI Commit Generator デフォルト設定
+gemini:
+  # Gemini APIモデル設定
+  model: "gemini-pro"
+  temperature: 0.3
+  max_tokens: 100
+  timeout: 30
+
+commit_message:
+  # コミットメッセージ設定
+  max_length: 72
+  use_conventional_commits: true
+  language: "ja"  # ja または en
+
+ui:
+  # UI表示設定
+  show_spinner: true
+  spinner_style: "dots"
+  confirmation_required: true
+
+logging:
+  # ログ設定
+  level: "info"
+  file: ""  # 空の場合はコンソール出力のみ
