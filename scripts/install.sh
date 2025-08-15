@@ -73,15 +73,19 @@ check_dependencies() {
         missing_deps+=("bash")
     fi
     
-    # オプション依存関係
-    local optional_deps=()
     if ! command -v jq >/dev/null 2>&1; then
-        optional_deps+=("jq")
+        missing_deps+=("jq")
     fi
     
+    # yq v4の確認
     if ! command -v yq >/dev/null 2>&1; then
-        optional_deps+=("yq")
+        missing_deps+=("yq v4 (mikefarah/yq)")
+    elif ! yq --version 2>/dev/null | grep -q "version v4\|mikefarah"; then
+        missing_deps+=("yq v4 (現在: $(yq --version 2>/dev/null | head -1), 必要: yq v4.x mikefarah/yq)")
     fi
+    
+    # オプション依存関係
+    local optional_deps=()
     
     if ! command -v gemini >/dev/null 2>&1; then
         optional_deps+=("gemini")
@@ -93,6 +97,11 @@ check_dependencies() {
         for dep in "${missing_deps[@]}"; do
             echo "  - $dep"
         done
+        echo
+        echo "インストール方法:"
+        echo "  - jq: brew install jq"
+        echo "  - yq v4: brew install yq (mikefarah/yq)"
+        echo "  - または: https://github.com/mikefarah/yq/#install"
         echo
         echo "これらをインストールしてから再実行してください。"
         exit 1
@@ -133,6 +142,9 @@ install_files() {
     
     # srcディレクトリをコピー
     cp -r "$PROJECT_DIR/src" "$INSTALL_DIR/"
+    
+    # scriptsディレクトリをコピー
+    cp -r "$PROJECT_DIR/scripts" "$INSTALL_DIR/"
     
     # 設定ファイルをコピー（既存設定の保護）
     if [[ -d "$CONFIG_DIR/config" ]]; then
@@ -266,6 +278,11 @@ uninstall() {
     if [[ -d "$INSTALL_DIR/src" ]]; then
         rm -rf "$INSTALL_DIR/src"
         log_success "ソースファイルを削除しました"
+    fi
+    
+    if [[ -d "$INSTALL_DIR/scripts" ]]; then
+        rm -rf "$INSTALL_DIR/scripts"
+        log_success "スクリプトファイルを削除しました"
     fi
     
     # 設定ディレクトリ（ユーザーに確認）

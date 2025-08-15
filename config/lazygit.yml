@@ -4,7 +4,7 @@
 customCommands:
   - key: '<c-g>'
     context: 'files'
-    command: '/root/ai-commit-generator/ai-commit-generator'
+    command: 'ai-commit-generator'
     description: 'AIコミットメッセージ生成'
     subprocess: true
     prompts:
@@ -13,6 +13,6 @@ customCommands:
         body: '生成AIがコミットメッセージを作成します。続行しますか？'
   - key: '<c-x>'
     context: 'files'
-    command: '/root/ai-commit-generator/ai-commit-generator --check-env'
+    command: 'ai-commit-generator --check-env'
     description: '環境変数チェック'
     subprocess: true

@@ -4,8 +4,13 @@
 
 set -euo pipefail
 
-# スクリプトのディレクトリを取得
-MAIN_SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# スクリプトのディレクトリを取得（symlinkを解決）
+MAIN_SCRIPT_PATH="${BASH_SOURCE[0]}"
+# symlinkの場合は実際のパスを解決
+if [[ -L "$MAIN_SCRIPT_PATH" ]]; then
+    MAIN_SCRIPT_PATH="$(readlink -f "$MAIN_SCRIPT_PATH")"
+fi
+MAIN_SCRIPT_DIR="$(cd "$(dirname "$MAIN_SCRIPT_PATH")" && pwd)"
 SRC_DIR="${MAIN_SCRIPT_DIR}/src"
 
 # 依存スクリプトを読み込み
