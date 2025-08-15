@@ -56,9 +56,9 @@ show_version() {
     echo
     echo "システム情報:"
     echo "  OS: $(uname -s) $(uname -r)"
-    echo "  シェル: ${SHELL}"
+    echo "  シェル: ${SHELL:-unknown}"
     echo "  Git: $(git --version 2>/dev/null || echo 'Not installed')"
-    echo "  Gemini CLI: $(which gemini 2>/dev/null || echo 'Not installed')"
+    echo "  Gemini CLI: $(command -v gemini >/dev/null 2>&1 && command -v gemini || echo 'Not installed')"
 }
 
 # コマンドライン引数を解析
@@ -78,10 +78,20 @@ parse_arguments() {
                 exit 0
                 ;;
             -c|--config)
+                if [[ -z "${2:-}" ]] || [[ "${2:-}" == -* ]]; then
+                    echo "エラー: --config オプションには設定ファイルのパスが必要です" >&2
+                    echo "使用方法: $0 --config /path/to/config.yml" >&2
+                    exit 1
+                fi
                 custom_config="$2"
                 shift 2
                 ;;
             -l|--log-level)
+                if [[ -z "${2:-}" ]] || [[ "${2:-}" == -* ]]; then
+                    echo "エラー: --log-level オプションにはログレベルが必要です" >&2
+                    echo "使用方法: $0 --log-level debug" >&2
+                    exit 1
+                fi
                 custom_log_level="$2"
                 shift 2
                 ;;
