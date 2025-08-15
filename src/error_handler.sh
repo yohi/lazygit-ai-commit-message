@@ -1,7 +1,16 @@
 #!/bin/bash
 # エラーハンドリングシステム
 
-set -euo pipefail
+# Bash 4+ バージョンチェック
+if [[ "${BASH_VERSINFO[0]}" -lt 4 ]]; then
+    echo "エラー: このスクリプトはBash 4.0以上が必要です。現在のバージョン: ${BASH_VERSION}" >&2
+    echo "Bashをアップグレードしてください。" >&2
+    if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
+        exit 1
+    else
+        return 1
+    fi
+fi
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "${SCRIPT_DIR}/logger.sh"
@@ -239,10 +248,10 @@ log_error_details() {
     # システム情報をログに記録
     log_debug "システム情報:"
     log_debug "  OS: $(uname -s) $(uname -r)"
-    log_debug "  シェル: $SHELL"
+    log_debug "  シェル: ${SHELL:-unknown}"
     log_debug "  作業ディレクトリ: $(pwd)"
     log_debug "  Git バージョン: $(git --version 2>/dev/null || echo 'Git not found')"
-    log_debug "  Gemini CLI: $(which gemini 2>/dev/null || echo 'Not found')"
+    log_debug "  Gemini CLI: $(command -v gemini 2>/dev/null || echo 'Not found')"
 }
 
 # エラーハンドラー関数
@@ -378,7 +387,7 @@ diagnose_system() {
     # Gemini CLI の確認
     echo "Gemini CLI 環境:"
     if command -v gemini >/dev/null 2>&1; then
-        echo "  ✅ Gemini CLI: $(which gemini)"
+        echo "  ✅ Gemini CLI: $(command -v gemini)"
         if [[ -n "${GEMINI_API_KEY:-}" ]]; then
             echo "  ✅ APIキー: 設定済み"
         else
@@ -393,7 +402,7 @@ diagnose_system() {
     echo "依存関係:"
     for cmd in jq yq; do
         if command -v "$cmd" >/dev/null 2>&1; then
-            echo "  ✅ $cmd: $(which $cmd)"
+            echo "  ✅ $cmd: $(command -v $cmd)"
         else
             echo "  ⚠️  $cmd: 未インストール（オプション）"
         fi
@@ -411,6 +420,11 @@ diagnose_system() {
 
 # スクリプトが直接実行された場合
 if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
+    # エラーハンドラーを初期化
+    if type -t setup_error_handlers >/dev/null 2>&1; then
+        setup_error_handlers
+    fi
+    
     case "${1:-}" in
         "diagnose")
             diagnose_system
