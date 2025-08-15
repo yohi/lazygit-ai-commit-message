@@ -44,6 +44,9 @@ AI Commit Generator v${VERSION}
   --debug-gemini          Gemini CLI詳細デバッグを実行
   --check-env             環境変数チェックを実行
   --dry-run               実際の生成なしでプロセスをテスト
+  --lazygit-mode          Lazygit統合モード（一時ファイル経由）
+  --prepare-commit        コミット用ファイル準備モード
+  --lazygit-prepare       Lazygitコミット準備モード（フック使用）
 
 例:
   ai-commit-generator                    # 通常実行
@@ -71,7 +74,7 @@ parse_arguments() {
     local dry_run=false
     local custom_config=""
     local custom_log_level=""
-    
+
     while [[ $# -gt 0 ]]; do
         case $1 in
             -h|--help)
@@ -123,6 +126,34 @@ parse_arguments() {
                 dry_run=true
                 shift
                 ;;
+            --lazygit-mode)
+                export LAZYGIT_MODE="true"
+                shift
+                ;;
+            --prepare-commit)
+                export PREPARE_COMMIT_MODE="true"
+                shift
+                ;;
+            --quiet)
+                export QUIET_MODE="true"
+                shift
+                ;;
+            --single-line)
+                export SINGLE_LINE_MODE="true"
+                shift
+                ;;
+            --lazygit-prepare)
+                export LAZYGIT_PREPARE_MODE="true"
+                shift
+                ;;
+            --lazygit-menu)
+                export LAZYGIT_MENU_MODE="true"
+                shift
+                ;;
+            --lazygit-setup)
+                export LAZYGIT_SETUP_MODE="true"
+                shift
+                ;;
             *)
                 echo "エラー: 不明なオプション: $1" >&2
                 echo "使用方法については --help を参照してください" >&2
@@ -130,7 +161,7 @@ parse_arguments() {
                 ;;
         esac
     done
-    
+
     # グローバル変数に設定
     export DRY_RUN="$dry_run"
     export CUSTOM_CONFIG="$custom_config"
@@ -139,13 +170,19 @@ parse_arguments() {
 
 # 環境変数を設定
 setup_environment() {
+    # Lazygitサブプロセス検出
+    if [[ -n "${LAZYGIT_PID:-}" ]] || pgrep -f "lazygit" >/dev/null 2>&1; then
+        export LAZYGIT_SUBPROCESS="true"
+        log_debug "Lazygitサブプロセス環境を検出"
+    fi
+
     # ログレベルを設定
     if [[ -n "${CUSTOM_LOG_LEVEL:-}" ]]; then
         export LOG_LEVEL="$CUSTOM_LOG_LEVEL"
     else
         export LOG_LEVEL=$(get_config_value '.logging.level' 'info')
     fi
-    
+
     # ログファイルを設定
     local log_file=$(get_config_value '.logging.file' '')
     if [[ -n "$log_file" ]]; then
@@ -153,7 +190,7 @@ setup_environment() {
         # ログディレクトリを作成
         mkdir -p "$(dirname "$log_file")"
     fi
-    
+
     log_info "AI Commit Generator v${VERSION} を開始"
     log_debug "環境設定完了 - ログレベル: $LOG_LEVEL"
 }
@@ -161,41 +198,41 @@ setup_environment() {
 # 前提条件をチェック
 check_prerequisites() {
     log_info "前提条件をチェック中..."
-    
+
     # Gitリポジトリチェック
     if ! git rev-parse --git-dir >/dev/null 2>&1; then
         handle_error "${ERROR_CODES["GIT_NOT_REPOSITORY"]}"
     fi
-    
+
     # Gemini CLIチェック
     if ! check_gemini_cli; then
         handle_error "${ERROR_CODES["GEMINI_CLI_NOT_FOUND"]}"
     fi
-    
+
     # 設定ファイル検証
     if ! validate_config; then
         handle_error "${ERROR_CODES["CONFIG_INVALID"]}"
     fi
-    
+
     log_info "前提条件チェック完了"
 }
 
 # メイン処理
 main_process() {
     log_info "コミットメッセージ生成プロセスを開始..."
-    
+
     # UI初期化
     setup_signal_handlers
-    
-    # 確認ダイアログ表示
+
+    # 確認ダイアログ表示（設定による）
     if ! show_confirmation "AIコミットメッセージ生成" "生成AIがコミットメッセージを作成します"; then
         log_info "ユーザーによってキャンセルされました"
         exit 0
     fi
-    
+
     # ローディング表示開始
     start_spinner "ステージされたファイルを分析中..."
-    
+
     # Git diff分析
     log_debug "Git diff分析を実行中..."
     local file_analysis
@@ -203,17 +240,17 @@ main_process() {
         stop_spinner
         handle_error "${ERROR_CODES["GIT_NO_STAGED_FILES"]}"
     fi
-    
+
     # Git diff取得
     local diff_content
     if ! diff_content=$(get_git_diff 2>/dev/null); then
         stop_spinner
         handle_error "${ERROR_CODES["GIT_DIFF_ERROR"]}"
     fi
-    
+
     stop_spinner
     show_success "ファイル分析完了"
-    
+
     # ドライランモード
     if [[ "${DRY_RUN:-false}" == "true" ]]; then
         echo "=== ドライランモード ==="
@@ -232,10 +269,10 @@ main_process() {
         log_info "ドライラン完了"
         exit 0
     fi
-    
+
     # Gemini CLIでメッセージ生成
     start_spinner "AIコミットメッセージを生成中..."
-    
+
     local commit_message
     if ! commit_message=$(generate_commit_message "$diff_content" "$file_analysis" 2>/dev/null); then
         stop_spinner
@@ -243,13 +280,13 @@ main_process() {
             "手動でコミットメッセージを入力してください" || true
         exit "${ERROR_CODES["GEMINI_API_ERROR"]}"
     fi
-    
+
     stop_spinner
     show_success "コミットメッセージ生成完了"
-    
+
     # メッセージをLazygitに返す
     return_to_lazygit "$commit_message"
-    
+
     log_info "プロセス正常完了"
 }
 
@@ -257,22 +294,22 @@ main_process() {
 main() {
     # エラーハンドラー設定
     setup_error_handlers
-    
+
     # 引数解析
     parse_arguments "$@"
-    
+
     # 環境設定
     setup_environment
-    
+
     # 前提条件チェック
     check_prerequisites
-    
+
     # メイン処理実行
     main_process
-    
+
     # クリーンアップ
     cleanup_ui
-    
+
     exit 0
 }
 

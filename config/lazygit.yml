@@ -2,17 +2,17 @@
 # ~/.config/lazygit/config.yml に追加してください
 
 customCommands:
-  - key: '<c-g>'
-    context: 'files'
-    command: 'ai-commit-generator'
-    description: 'AIコミットメッセージ生成'
-    subprocess: true
+  - key: "<c-g>"
+    context: "files"
+    description: "AIコミットメッセージ生成＆準備"
     prompts:
-      - type: 'confirm'
-        title: 'AIコミットメッセージ生成'
-        body: '生成AIがコミットメッセージを作成します。続行しますか？'
-  - key: '<c-x>'
-    context: 'files'
-    command: 'ai-commit-generator --check-env'
-    description: '環境変数チェック'
+      - type: "confirm"
+        title: "AIコミットメッセージ生成"
+        body: "生成AIがコミットメッセージを作成します。続行しますか？"
+    command: "ai-commit-generator --lazygit-setup"
+    output: "popup"
+  - key: "<c-x>"
+    context: "files"
+    command: "ai-commit-generator --check-env"
+    description: "環境変数チェック"
     subprocess: true

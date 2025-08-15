@@ -16,7 +16,7 @@ ui:
   # UI表示設定
   show_spinner: true
   spinner_style: "dots"
-  confirmation_required: true
+  confirmation_required: false
 
 logging:
   # ログ設定

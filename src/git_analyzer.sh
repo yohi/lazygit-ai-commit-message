@@ -11,13 +11,13 @@ source "${SCRIPT_DIR}/logger.sh"
 # ステージされたファイルが存在するかチェック
 check_staged_files() {
     log_debug "ステージされたファイルをチェック中..."
-    
+
     if ! git diff --cached --name-only | head -1 | grep -q .; then
         log_error "ステージされたファイルがありません"
         echo "ファイルをステージしてからコミットメッセージを生成してください。" >&2
         return 1
     fi
-    
+
     log_info "ステージされたファイルが見つかりました"
     return 0
 }
@@ -25,15 +25,15 @@ check_staged_files() {
 # Git diffを取得
 get_git_diff() {
     log_debug "Git diffを取得中..."
-    
+
     local diff_output
     diff_output=$(git diff --cached)
-    
+
     if [[ -z "$diff_output" ]]; then
         log_error "空のdiffです"
         return 1
     fi
-    
+
     echo "$diff_output"
     return 0
 }
@@ -41,12 +41,12 @@ get_git_diff() {
 # ファイル情報を分析
 analyze_files() {
     log_debug "ファイル分析を開始..."
-    
+
     local files_json=""
     local total_files=0
     local total_additions=0
     local total_deletions=0
-    
+
     # ステージされたファイルの統計を取得
     while IFS=$'\t' read -r additions deletions filename; do
         # 数値でない場合はスキップ（バイナリファイルなど）
@@ -54,7 +54,7 @@ analyze_files() {
             total_additions=$((total_additions + additions))
             total_deletions=$((total_deletions + deletions))
         fi
-        
+
         # ファイルタイプを推定
         local file_type="unknown"
         case "${filename##*.}" in
@@ -72,7 +72,7 @@ analyze_files() {
             css) file_type="css" ;;
             *) file_type="text" ;;
         esac
-        
+
         # 変更タイプを判定
         local change_type="modified"
         if git diff --cached --name-status | grep -q "^A.*${filename}$"; then
@@ -82,13 +82,13 @@ analyze_files() {
         elif git diff --cached --name-status | grep -q "^R.*${filename}$"; then
             change_type="renamed"
         fi
-        
+
         # JSONエントリを構築（数値の安全な処理）
         local safe_additions="${additions//[^0-9]/}"
         local safe_deletions="${deletions//[^0-9]/}"
         safe_additions="${safe_additions:-0}"
         safe_deletions="${safe_deletions:-0}"
-        
+
         local file_entry
         file_entry=$(cat <<EOF
     {
@@ -100,16 +100,16 @@ analyze_files() {
     }
 EOF
         )
-        
+
         if [[ -n "$files_json" ]]; then
             files_json="${files_json},"
         fi
         files_json="${files_json}${file_entry}"
-        
+
         total_files=$((total_files + 1))
-        
+
     done < <(git diff --cached --numstat)
-    
+
     # 変更タイプを推定
     local change_types=""
     if [[ $total_additions -gt $total_deletions ]]; then
@@ -123,7 +123,7 @@ EOF
     else
         change_types="\"refactor\""
     fi
-    
+
     # JSONを出力
     cat <<EOF
 {
@@ -138,29 +138,29 @@ ${files_json}
   }
 }
 EOF
-    
+
     log_info "ファイル分析完了: ${total_files}ファイル, +${total_additions}/-${total_deletions}"
 }
 
 # メイン関数
 main() {
     log_info "Git diff分析を開始..."
-    
+
     # Gitリポジトリチェック
     if ! git rev-parse --git-dir >/dev/null 2>&1; then
         log_error "Gitリポジトリではありません"
         echo "Gitリポジトリ内で実行してください。" >&2
         return 1
     fi
-    
+
     # ステージされたファイルをチェック
     if ! check_staged_files; then
         return 1
     fi
-    
+
     # ファイル分析を実行
     analyze_files
-    
+
     log_info "Git diff分析完了"
     return 0
 }

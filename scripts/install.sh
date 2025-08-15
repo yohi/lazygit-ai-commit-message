@@ -61,36 +61,36 @@ EOF
 # 依存関係チェック
 check_dependencies() {
     log_info "依存関係をチェック中..."
-    
+
     local missing_deps=()
-    
+
     # 必須依存関係
     if ! command -v git >/dev/null 2>&1; then
         missing_deps+=("git")
     fi
-    
+
     if ! command -v bash >/dev/null 2>&1; then
         missing_deps+=("bash")
     fi
-    
+
     if ! command -v jq >/dev/null 2>&1; then
         missing_deps+=("jq")
     fi
-    
+
     # yq v4の確認
     if ! command -v yq >/dev/null 2>&1; then
         missing_deps+=("yq v4 (mikefarah/yq)")
     elif ! yq --version 2>/dev/null | grep -q "version v4\|mikefarah"; then
         missing_deps+=("yq v4 (現在: $(yq --version 2>/dev/null | head -1), 必要: yq v4.x mikefarah/yq)")
     fi
-    
+
     # オプション依存関係
     local optional_deps=()
-    
+
     if ! command -v gemini >/dev/null 2>&1; then
         optional_deps+=("gemini")
     fi
-    
+
     # 必須依存関係が不足している場合はエラー
     if [[ ${#missing_deps[@]} -gt 0 ]]; then
         log_error "以下の必須依存関係がインストールされていません:"
@@ -106,7 +106,7 @@ check_dependencies() {
         echo "これらをインストールしてから再実行してください。"
         exit 1
     fi
-    
+
     # オプション依存関係の警告
     if [[ ${#optional_deps[@]} -gt 0 ]]; then
         log_warn "以下のオプション依存関係がインストールされていません:"
@@ -117,35 +117,35 @@ check_dependencies() {
         echo "基本機能は動作しますが、完全な機能を利用するには上記をインストールすることを推奨します。"
         echo
     fi
-    
+
     log_success "依存関係チェック完了"
 }
 
 # ディレクトリを作成
 create_directories() {
     log_info "ディレクトリを作成中..."
-    
+
     mkdir -p "$INSTALL_DIR"
     mkdir -p "$CONFIG_DIR"
     mkdir -p "$LAZYGIT_CONFIG_DIR"
-    
+
     log_success "ディレクトリ作成完了"
 }
 
 # ファイルをインストール
 install_files() {
     log_info "ファイルをインストール中..."
-    
+
     # メインスクリプトをコピー
     cp "$PROJECT_DIR/ai-commit-generator" "$INSTALL_DIR/"
     chmod +x "$INSTALL_DIR/ai-commit-generator"
-    
+
     # srcディレクトリをコピー
     cp -r "$PROJECT_DIR/src" "$INSTALL_DIR/"
-    
+
     # scriptsディレクトリをコピー
     cp -r "$PROJECT_DIR/scripts" "$INSTALL_DIR/"
-    
+
     # 設定ファイルをコピー（既存設定の保護）
     if [[ -d "$CONFIG_DIR/config" ]]; then
         backup_dir="$CONFIG_DIR/config.backup.$(date +%Y%m%d_%H%M%S)"
@@ -156,7 +156,7 @@ install_files() {
     else
         cp -r "$PROJECT_DIR/config" "$CONFIG_DIR/"
     fi
-    
+
     log_success "ファイルインストール完了"
 }
 
@@ -166,12 +166,12 @@ update_lazygit_config() {
         log_info "Lazygit設定の更新をスキップしました"
         return 0
     fi
-    
+
     log_info "Lazygit設定を更新中..."
-    
+
     local lazygit_config="$LAZYGIT_CONFIG_DIR/config.yml"
     local custom_command_config="$PROJECT_DIR/config/lazygit.yml"
-    
+
     # Lazygit設定ファイルが存在しない場合は作成
     if [[ ! -f "$lazygit_config" ]]; then
         log_info "新しいLazygit設定ファイルを作成します"
@@ -179,10 +179,10 @@ update_lazygit_config() {
     else
         # 既存の設定ファイルに追加
         log_info "既存のLazygit設定ファイルに追加します"
-        
+
         # バックアップを作成
         cp "$lazygit_config" "$lazygit_config.backup.$(date +%Y%m%d_%H%M%S)"
-        
+
         # カスタムコマンドが既に存在するかチェック
         if grep -q "ai-commit-generator" "$lazygit_config" 2>/dev/null; then
             log_warn "AI Commit Generatorのカスタムコマンドは既に設定されています"
@@ -203,18 +203,18 @@ update_lazygit_config() {
             fi
         fi
     fi
-    
+
     log_success "Lazygit設定更新完了"
 }
 
 # PATHの確認と更新
 update_path() {
     log_info "PATH設定を確認中..."
-    
+
     # PATHにINSTALL_DIRが含まれているかチェック
     if [[ ":$PATH:" != *":$INSTALL_DIR:"* ]]; then
         log_warn "$INSTALL_DIR がPATHに含まれていません"
-        
+
         local shell_config=""
         case "$SHELL" in
             */bash)
@@ -230,7 +230,7 @@ update_path() {
                 log_warn "不明なシェル: $SHELL"
                 ;;
         esac
-        
+
         if [[ -n "$shell_config" ]]; then
             log_info "以下の行を $shell_config に追加してください:"
             echo "  export PATH=\"\$PATH:$INSTALL_DIR\""
@@ -268,23 +268,23 @@ show_install_complete() {
 # アンインストール
 uninstall() {
     log_info "アンインストールを開始..."
-    
+
     # インストールしたファイルを削除
     if [[ -f "$INSTALL_DIR/ai-commit-generator" ]]; then
         rm -f "$INSTALL_DIR/ai-commit-generator"
         log_success "メインスクリプトを削除しました"
     fi
-    
+
     if [[ -d "$INSTALL_DIR/src" ]]; then
         rm -rf "$INSTALL_DIR/src"
         log_success "ソースファイルを削除しました"
     fi
-    
+
     if [[ -d "$INSTALL_DIR/scripts" ]]; then
         rm -rf "$INSTALL_DIR/scripts"
         log_success "スクリプトファイルを削除しました"
     fi
-    
+
     # 設定ディレクトリ（ユーザーに確認）
     if [[ -d "$CONFIG_DIR" ]]; then
         if [[ -t 0 ]]; then
@@ -302,7 +302,7 @@ uninstall() {
             log_info "非対話モード: 設定ディレクトリは保持されました: $CONFIG_DIR"
         fi
     fi
-    
+
     # Lazygit設定（ユーザーに確認）
     local lazygit_config="$LAZYGIT_CONFIG_DIR/config.yml"
     if [[ -f "$lazygit_config" ]] && grep -q "ai-commit-generator" "$lazygit_config" 2>/dev/null; then
@@ -314,7 +314,7 @@ uninstall() {
         if [[ $REPLY =~ ^[Yy]$ ]]; then
             # バックアップを作成
             cp "$lazygit_config" "$lazygit_config.backup.$(date +%Y%m%d_%H%M%S)"
-            
+
             # AI Commit Generatorの設定を削除（移植性対応）
             if command -v yq >/dev/null 2>&1; then
                 # yqで安全に削除
@@ -328,7 +328,7 @@ uninstall() {
             log_info "Lazygit設定は保持されました"
         fi
     fi
-    
+
     log_success "アンインストールが完了しました"
 }
 
@@ -336,7 +336,7 @@ uninstall() {
 main() {
     local force_install=false
     local uninstall_mode=false
-    
+
     # 引数解析
     while [[ $# -gt 0 ]]; do
         case $1 in
@@ -367,23 +367,23 @@ main() {
                 ;;
         esac
     done
-    
+
     # アンインストールモード
     if [[ "$uninstall_mode" == "true" ]]; then
         uninstall
         exit 0
     fi
-    
+
     # インストールモード
     log_info "AI Commit Generator インストールを開始..."
-    
+
     # 既存インストールチェック
     if [[ -f "$INSTALL_DIR/ai-commit-generator" ]] && [[ "$force_install" != "true" ]]; then
         log_error "AI Commit Generatorは既にインストールされています"
         echo "強制上書きする場合は --force オプションを使用してください"
         exit 1
     fi
-    
+
     # インストール実行
     check_dependencies
     create_directories
@@ -391,7 +391,7 @@ main() {
     update_lazygit_config
     update_path
     show_install_complete
-    
+
     log_success "インストールプロセス完了"
 }
 
