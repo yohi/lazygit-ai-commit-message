@@ -1,12 +1,19 @@
-# Lazygit設定ファイルのカスタムコマンド設定
-# ~/.config/lazygit/config.yml に追加してください
+# Lazygit設定ファイル
+# ~/.config/lazygit/config.yml
+
+gui:
+  theme:
+    lightTheme: false
+  commitLength:
+    show: true
 
 customCommands:
   - key: '<c-g>'
     context: 'files'
-    command: 'ai-commit-generator'
+    command: 'ai-commit-generator --lazygit-mode'
     description: 'AIコミットメッセージ生成'
-    subprocess: true
+    stream: false
+    showOutput: true
     prompts:
       - type: 'confirm'
         title: 'AIコミットメッセージ生成'
@@ -15,4 +22,5 @@ customCommands:
     context: 'files'
     command: 'ai-commit-generator --check-env'
     description: '環境変数チェック'
-    subprocess: true
+    stream: false
+    showOutput: true

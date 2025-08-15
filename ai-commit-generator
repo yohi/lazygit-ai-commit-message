@@ -44,6 +44,7 @@ AI Commit Generator v${VERSION}
   --debug-gemini          Gemini CLI詳細デバッグを実行
   --check-env             環境変数チェックを実行
   --dry-run               実際の生成なしでプロセスをテスト
+  --lazygit-mode          Lazygit統合モード（スピナー表示、結果をstdoutに出力）
 
 例:
   ai-commit-generator                    # 通常実行
@@ -71,6 +72,7 @@ parse_arguments() {
     local dry_run=false
     local custom_config=""
     local custom_log_level=""
+    local lazygit_mode=false
     
     while [[ $# -gt 0 ]]; do
         case $1 in
@@ -123,6 +125,10 @@ parse_arguments() {
                 dry_run=true
                 shift
                 ;;
+            --lazygit-mode)
+                lazygit_mode=true
+                shift
+                ;;
             *)
                 echo "エラー: 不明なオプション: $1" >&2
                 echo "使用方法については --help を参照してください" >&2
@@ -135,23 +141,32 @@ parse_arguments() {
     export DRY_RUN="$dry_run"
     export CUSTOM_CONFIG="$custom_config"
     export CUSTOM_LOG_LEVEL="$custom_log_level"
+    export LAZYGIT_MODE="$lazygit_mode"
 }
 
 # 環境変数を設定
 setup_environment() {
-    # ログレベルを設定
-    if [[ -n "${CUSTOM_LOG_LEVEL:-}" ]]; then
-        export LOG_LEVEL="$CUSTOM_LOG_LEVEL"
-    else
-        export LOG_LEVEL=$(get_config_value '.logging.level' 'info')
-    fi
-    
-    # ログファイルを設定
-    local log_file=$(get_config_value '.logging.file' '')
-    if [[ -n "$log_file" ]]; then
-        export LOG_FILE="$log_file"
+    # Lazygitモードの場合はログを抑制
+    if [[ "${LAZYGIT_MODE:-false}" == "true" ]]; then
+        export LOG_LEVEL="error"
+        export LOG_FILE="/tmp/ai-commit-generator.log"
         # ログディレクトリを作成
-        mkdir -p "$(dirname "$log_file")"
+        mkdir -p "$(dirname "$LOG_FILE")"
+    else
+        # ログレベルを設定
+        if [[ -n "${CUSTOM_LOG_LEVEL:-}" ]]; then
+            export LOG_LEVEL="$CUSTOM_LOG_LEVEL"
+        else
+            export LOG_LEVEL=$(get_config_value '.logging.level' 'info')
+        fi
+        
+        # ログファイルを設定
+        local log_file=$(get_config_value '.logging.file' '')
+        if [[ -n "$log_file" ]]; then
+            export LOG_FILE="$log_file"
+            # ログディレクトリを作成
+            mkdir -p "$(dirname "$log_file")"
+        fi
     fi
     
     log_info "AI Commit Generator v${VERSION} を開始"
@@ -180,8 +195,58 @@ check_prerequisites() {
     log_info "前提条件チェック完了"
 }
 
+# Lazygitモード用のメイン処理
+main_process_lazygit() {
+    # Lazygitモードでは確認ダイアログは不要（Lazygitで既に確認済み）
+    echo "🤖 AIコミットメッセージを生成中..."
+    echo ""
+    
+    # Git diff分析
+    echo "📊 ステージされたファイルを分析中..."
+    local file_analysis
+    if ! file_analysis=$(analyze_files 2>/dev/null); then
+        echo "❌ エラー: ステージされたファイルがありません"
+        echo "ファイルをステージしてから再実行してください。"
+        exit 1
+    fi
+    
+    # Git diff取得
+    local diff_content
+    if ! diff_content=$(get_git_diff 2>/dev/null); then
+        echo "❌ エラー: Git diffの取得に失敗しました"
+        exit 1
+    fi
+    
+    echo "✅ ファイル分析完了"
+    echo ""
+    
+    # Gemini CLIでメッセージ生成
+    echo "🧠 Gemini AIでコミットメッセージを生成中..."
+    local commit_message
+    if ! commit_message=$(generate_commit_message "$diff_content" "$file_analysis" 2>/dev/null); then
+        echo "❌ エラー: AIコミットメッセージの生成に失敗しました"
+        echo "手動でコミットメッセージを入力してください。"
+        exit 1
+    fi
+    
+    echo "✅ コミットメッセージ生成完了"
+    echo ""
+    echo "📝 生成されたコミットメッセージ:"
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo "$commit_message"
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo ""
+    echo "このメッセージをコミットに使用できます。"
+}
+
 # メイン処理
 main_process() {
+    # Lazygitモードかどうかで処理を分岐
+    if [[ "${LAZYGIT_MODE:-false}" == "true" ]]; then
+        main_process_lazygit
+        return
+    fi
+    
     log_info "コミットメッセージ生成プロセスを開始..."
     
     # UI初期化
