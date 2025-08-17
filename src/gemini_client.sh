@@ -187,7 +187,7 @@ call_gemini_cli() {
     if [[ -n "$TIMEOUT_CMD" ]]; then
         log_info "Gemini APIリクエスト送信中..."
         if ("$TIMEOUT_CMD" "${timeout}" "$(get_gemini_command)" --prompt="$prompt" 2>"$error_file") >"$temp_output"; then
-            result=$(cat "$temp_output")
+            result=$(cat "$temp_output" 2>/dev/null | grep -v "Data collection is disabled" | grep -v "Loaded cached credentials" | head -1)
             rm -f "$temp_output" "$error_file"
             log_info "Gemini APIレスポンス受信成功（timeoutあり）"
             log_info "レスポンス長: ${#result} 文字"
@@ -196,7 +196,7 @@ call_gemini_cli() {
             exit_code=$?
             local error_output=""
             error_output=$(cat "$error_file" 2>/dev/null || echo "")
-            result=$(cat "$temp_output" 2>/dev/null || echo "")
+            result=$(cat "$temp_output" 2>/dev/null | grep -v "Data collection is disabled" | grep -v "Loaded cached credentials" | head -1 || echo "")
             rm -f "$temp_output" "$error_file"
             if handle_gemini_error "$exit_code" "$error_output" "$result" "$timeout" "$prompt"; then
                 return 0
@@ -209,7 +209,7 @@ call_gemini_cli() {
         log_info "timeoutコマンドが利用できないため、通常実行します"
         log_info "Gemini APIリクエスト送信中..."
         if ("$(get_gemini_command)" --prompt="$prompt" 2>"$error_file") >"$temp_output"; then
-            result=$(cat "$temp_output")
+            result=$(cat "$temp_output" 2>/dev/null | grep -v "Data collection is disabled" | grep -v "Loaded cached credentials" | head -1)
             rm -f "$temp_output" "$error_file"
             log_info "Gemini APIレスポンス受信成功（timeoutなし）"
             log_info "レスポンス長: ${#result} 文字"
@@ -218,7 +218,7 @@ call_gemini_cli() {
             exit_code=$?
             local error_output=""
             error_output=$(cat "$error_file" 2>/dev/null || echo "")
-            result=$(cat "$temp_output" 2>/dev/null || echo "")
+            result=$(cat "$temp_output" 2>/dev/null | grep -v "Data collection is disabled" | grep -v "Loaded cached credentials" | head -1 || echo "")
             rm -f "$temp_output" "$error_file"
             if handle_gemini_error "$exit_code" "$error_output" "$result" "$timeout" "$prompt"; then
                 return 0
@@ -237,14 +237,59 @@ call_gemini_cli() {
 process_response() {
     local response="$1"
     local max_length="${2:-72}"
+    local file_analysis="${3:-}"
     
     log_info "レスポンス後処理中..."
     log_info "元のレスポンス長: ${#response} 文字"
     log_debug "元のレスポンス内容: ${response}"
     
-    # 不要な行を除去して最初の有効な行を取得
-    # ログ行やキャッシュメッセージを除外
-    response=$(echo "$response" | grep -v "Loaded cached credentials" | grep -v "^\[.*\] \[.*\]" | grep -v "^INFO\|^DEBUG\|^WARN\|^ERROR" | head -n 1 | sed 's/^[[:space:]]*//' | sed 's/[[:space:]]*$//')
+    # 不要な行を除去して実際のコミットメッセージを抽出
+    # まず明らかに除外すべき行を削除
+    response=$(echo "$response" | \
+        grep -v "Loaded cached credentials" | \
+        grep -v "Data collection is disabled" | \
+        grep -v "^\[20[0-9][0-9]-[0-9][0-9]-[0-9][0-9].*\]" | \
+        grep -v "^INFO" | \
+        grep -v "^DEBUG" | \
+        grep -v "^WARN" | \
+        grep -v "^ERROR" | \
+        grep -v "Gemini CLI" | \
+        grep -v "プロンプト" | \
+        grep -v "レスポンス" | \
+        grep -v "実行中" | \
+        grep -v "送信中" | \
+        grep -v "受信" | \
+        grep -v "処理中" | \
+        grep -v "生成" | \
+        grep -v "を使用して" | \
+        grep -v "が利用可能" | \
+        grep -v "元のレスポンス" | \
+        grep -v "処理後のメッセージ" | \
+        grep -v "完了" | \
+        grep -v "^$")
+    
+    # コミットメッセージらしい行を抽出（一般的なパターン）
+    local clean_message=""
+    while IFS= read -r line; do
+        # 明らかにコミットメッセージらしい行をチェック
+        if [[ "$line" =~ ^(feat|fix|docs|style|refactor|test|chore): ]] || \
+           [[ "$line" =~ ^[A-Z][a-z].* ]] || \
+           [[ "$line" =~ ^[0-9]+個.*[追更削変]加新$ ]] || \
+           [[ "$line" =~ ^.*ファイルを[追更削変] ]] || \
+           [[ ${#line} -ge 10 && ${#line} -le 100 ]]; then
+            if [[ -z "$clean_message" ]]; then
+                clean_message="$line"
+                break
+            fi
+        fi
+    done <<< "$response"
+    
+    # まだ見つからない場合は最初の有効そうな行を使用
+    if [[ -z "$clean_message" ]]; then
+        clean_message=$(echo "$response" | head -n 1 | sed 's/^[[:space:]]*//' | sed 's/[[:space:]]*$//')
+    fi
+    
+    response="$clean_message"
     
     # 文字数制限を適用
     if [[ ${#response} -gt $max_length ]]; then
@@ -254,6 +299,61 @@ process_response() {
     fi
     
     log_info "処理後のメッセージ: ${response}"
+    log_debug "レスポンス長: ${#response}"
+    log_debug "レスポンス内容チェック: '${response}'"
+    
+    # 最終的なレスポンスが空の場合、またはエラーメッセージのみの場合の処理
+    if [[ -z "$response" ]] || [[ "$response" == "Data collection is disabled." ]] || [[ "$response" =~ ^Data\ collection\ is\ disabled\.* ]]; then
+        log_warn "Gemini CLIから有効なレスポンスが得られませんでした - フォールバック機能を使用"
+        
+        # ファイル分析結果からシンプルなコミットメッセージを生成
+        local fallback_message
+        if [[ -n "${file_analysis:-}" ]]; then
+            # ファイル分析結果からフォールバックメッセージを生成
+            local file_count=$(echo "$file_analysis" | jq -r '.summary.total_files' 2>/dev/null || echo "1")
+            local lines_added=$(echo "$file_analysis" | jq -r '.summary.lines_added' 2>/dev/null || echo "0")
+            local lines_deleted=$(echo "$file_analysis" | jq -r '.summary.lines_deleted' 2>/dev/null || echo "0")
+            
+            # ファイルのステータスを確認
+            local added_files=$(git diff --cached --name-status | grep "^A" | wc -l)
+            local modified_files=$(git diff --cached --name-status | grep "^M" | wc -l)
+            local deleted_files=$(git diff --cached --name-status | grep "^D" | wc -l)
+            
+            if [[ $added_files -gt 0 ]] && [[ $modified_files -eq 0 ]] && [[ $deleted_files -eq 0 ]]; then
+                if [[ $added_files -eq 1 ]]; then
+                    fallback_message="新しいファイルを追加"
+                else
+                    fallback_message="${added_files}個のファイルを追加"
+                fi
+            elif [[ $modified_files -gt 0 ]] && [[ $added_files -eq 0 ]] && [[ $deleted_files -eq 0 ]]; then
+                if [[ $modified_files -eq 1 ]]; then
+                    fallback_message="ファイルを更新"
+                else
+                    fallback_message="${modified_files}個のファイルを更新"
+                fi
+            elif [[ $deleted_files -gt 0 ]] && [[ $added_files -eq 0 ]] && [[ $modified_files -eq 0 ]]; then
+                if [[ $deleted_files -eq 1 ]]; then
+                    fallback_message="ファイルを削除"
+                else
+                    fallback_message="${deleted_files}個のファイルを削除"
+                fi
+            else
+                # 混在している場合
+                local total_files=$((added_files + modified_files + deleted_files))
+                if [[ $total_files -eq 1 ]]; then
+                    fallback_message="ファイルを変更"
+                else
+                    fallback_message="${total_files}個のファイルを変更"
+                fi
+            fi
+        else
+            fallback_message="変更をコミット"
+        fi
+        
+        log_info "フォールバックメッセージを生成: $fallback_message"
+        response="$fallback_message"
+    fi
+    
     echo "$response"
 }
 
@@ -303,7 +403,7 @@ generate_commit_message() {
     
     # レスポンス後処理
     local processed_message
-    processed_message=$(process_response "$response" "$max_length")
+    processed_message=$(process_response "$response" "$max_length" "$file_analysis")
     
     echo "$processed_message"
     log_info "コミットメッセージ生成完了"

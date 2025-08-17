@@ -50,12 +50,236 @@ AI Commit Generator インストールスクリプト
   -f, --force             強制上書きインストール
   --install-dir <dir>     インストール先ディレクトリ (デフォルト: ~/.local/bin)
   --skip-lazygit-config   Lazygit設定の更新をスキップ
+  --skip-key-tools        キー送信ツールのインストールをスキップ
 
 例:
   ./install.sh                    # 標準インストール
   ./install.sh --force            # 強制上書きインストール
   ./install.sh --uninstall        # アンインストール
 EOF
+}
+
+# キー送信ツールをインストール
+install_key_sending_tools() {
+    log_info "キー送信ツールのインストールを確認中..."
+    
+    local need_install=false
+    local tools_to_install=()
+    
+    # 環境判定とツール選択
+    if [[ "${XDG_SESSION_TYPE:-}" == "wayland" ]]; then
+        if ! command -v ydotool >/dev/null 2>&1; then
+            tools_to_install+=("ydotool")
+            need_install=true
+        fi
+    else
+        # X11環境またはDISPLAY環境
+        if ! command -v xdotool >/dev/null 2>&1; then
+            tools_to_install+=("xdotool")
+            need_install=true
+        fi
+    fi
+    
+    # tmuxは手動インストールのみ（自動インストールしない）
+    
+    if [[ "$need_install" == "true" ]]; then
+        log_info "キー送信ツールをインストール中: ${tools_to_install[*]}"
+        
+        # パッケージ管理システムに応じてインストール
+        if command -v apt >/dev/null 2>&1; then
+            log_info "APTを使用してパッケージをインストール..."
+            for tool in "${tools_to_install[@]}"; do
+                if ! dpkg -l | grep -q "^ii.*$tool"; then
+                    log_info "インストール中: $tool"
+                    
+                    # ydotoolの場合は依存関係も含めてインストール
+                    if [[ "$tool" == "ydotool" ]]; then
+                        log_info "ydotoolと関連パッケージをインストール中..."
+                        if sudo apt update 2>&1 && sudo apt install -y ydotool ydotoold 2>&1; then
+                            log_success "ydotool のインストール完了"
+                            
+                            # ydotoolの詳細設定
+                            log_info "ydotoolの詳細設定を実行中..."
+                            
+                            # inputグループにユーザーを追加
+                            if sudo usermod -a -G input "$USER" 2>/dev/null; then
+                                log_success "ユーザーをinputグループに追加しました"
+                            else
+                                log_warn "inputグループへの追加に失敗（権限またはグループが存在しない可能性）"
+                            fi
+                            
+                            # ydotoolサービスファイルが存在するかチェック
+                            if systemctl list-unit-files | grep -q ydotool; then
+                                log_info "ydotoolサービスを有効化中..."
+                                if sudo systemctl enable --now ydotool 2>/dev/null; then
+                                    log_success "ydotoolサービス有効化完了"
+                                else
+                                    log_warn "ydotoolサービスの有効化に失敗"
+                                fi
+                            else
+                                log_info "ydotoolサービスファイルが見つかりません - 手動設定を実行"
+                                
+                                # 手動でydotooldを設定
+                                log_info "ydotool手動設定スクリプトを作成中..."
+                                
+                                # ydotool起動スクリプトを作成
+                                cat > /tmp/setup_ydotool.sh << 'EOF'
+#!/bin/bash
+
+# ydotool手動設定スクリプト
+echo "ydotoolの手動設定を開始..."
+
+# 既存のydotooldプロセスを停止
+sudo pkill ydotoold 2>/dev/null || true
+
+# 既存のソケットを削除
+sudo rm -f /tmp/.ydotool_socket
+
+# ydotooldをバックグラウンドで起動
+echo "ydotooldをバックグラウンドで起動中..."
+sudo ydotoold &
+
+# 少し待機してソケットが作成されるのを待つ
+sleep 2
+
+# ソケットの権限を設定
+if [ -e /tmp/.ydotool_socket ]; then
+    sudo chmod 666 /tmp/.ydotool_socket
+    echo "✅ ydotoolソケットの権限を設定しました"
+    echo "ydotool設定完了！"
+else
+    echo "❌ ydotoolソケットの作成に失敗しました"
+    exit 1
+fi
+
+echo "ydotoolのテスト実行..."
+if ydotool key --help >/dev/null 2>&1; then
+    echo "✅ ydotoolが正常に動作しています"
+else
+    echo "❌ ydotoolの動作に問題があります"
+fi
+EOF
+                                
+                                chmod +x /tmp/setup_ydotool.sh
+                                log_info "ydotool設定スクリプトを実行中..."
+                                
+                                if bash /tmp/setup_ydotool.sh; then
+                                    log_success "ydotool手動設定が完了しました"
+                                else
+                                    log_warn "ydotool手動設定に一部問題がありました"
+                                fi
+                                
+                                # クリーンアップ
+                                rm -f /tmp/setup_ydotool.sh
+                            fi
+                        else
+                            log_error "ydotool のインストールに失敗"
+                            log_info "詳細: sudo apt install -y ydotool ydotoold を手動で実行してください"
+                            # ydotoolのインストールに失敗しても継続（tmuxがあれば動作するため）
+                        fi
+                    else
+                        # 通常のパッケージインストール
+                        if sudo apt update >/dev/null 2>&1 && sudo apt install -y "$tool" 2>&1; then
+                            log_success "$tool のインストール完了"
+                        else
+                            log_error "$tool のインストールに失敗"
+                        fi
+                    fi
+                else
+                    log_info "$tool は既にインストール済み"
+                fi
+            done
+        elif command -v yum >/dev/null 2>&1; then
+            log_info "YUMを使用してパッケージをインストール..."
+            for tool in "${tools_to_install[@]}"; do
+                sudo yum install -y "$tool" || { log_error "$tool のインストールに失敗"; return 1; }
+                log_success "$tool のインストール完了"
+            done
+        elif command -v pacman >/dev/null 2>&1; then
+            log_info "Pacmanを使用してパッケージをインストール..."
+            for tool in "${tools_to_install[@]}"; do
+                sudo pacman -S --noconfirm "$tool" || { log_error "$tool のインストールに失敗"; return 1; }
+                log_success "$tool のインストール完了"
+            done
+        elif command -v brew >/dev/null 2>&1; then
+            log_info "Homebrewを使用してパッケージをインストール..."
+            for tool in "${tools_to_install[@]}"; do
+                # Homebrewでの名前変換
+                local brew_name="$tool"
+                if [[ "$tool" == "ydotool" ]]; then
+                    log_warn "Homebrewではydotoolは利用できません。Waylandユーザーは手動インストールしてください"
+                    continue
+                fi
+                
+                brew install "$brew_name" || { log_error "$tool のインストールに失敗"; return 1; }
+                log_success "$tool のインストール完了"
+            done
+        else
+            log_warn "未知のパッケージ管理システムです。以下を手動でインストールしてください:"
+            for tool in "${tools_to_install[@]}"; do
+                echo "  - $tool"
+            done
+            echo ""
+            echo "インストール例:"
+            echo "  Ubuntu/Debian: sudo apt install ${tools_to_install[*]}"
+            echo "  CentOS/RHEL: sudo yum install ${tools_to_install[*]}"
+            echo "  Arch Linux: sudo pacman -S ${tools_to_install[*]}"
+            return 1
+        fi
+    else
+        log_success "必要なキー送信ツールは既にインストール済みです"
+    fi
+    
+    # インストール後の確認
+    log_info "キー送信ツールの動作確認中..."
+    local available_tools=()
+    
+    if command -v tmux >/dev/null 2>&1; then
+        available_tools+=("tmux")
+    fi
+    
+    if [[ "${XDG_SESSION_TYPE:-}" == "wayland" ]] && command -v ydotool >/dev/null 2>&1; then
+        available_tools+=("ydotool")
+        
+        # ydotoolサービス状態確認
+        if systemctl is-active --quiet ydotool 2>/dev/null; then
+            log_success "ydotoolサービスが実行中です"
+        elif [[ -e /tmp/.ydotool_socket ]]; then
+            log_info "ydotoolソケットが存在します"
+            
+            # ソケットの権限確認
+            if ydotool key --help >/dev/null 2>&1; then
+                log_success "ydotoolが正常に動作しています"
+            else
+                log_warn "ydotoolソケットにアクセスできません - 権限問題の可能性"
+                log_info "解決方法: sudo chmod 666 /tmp/.ydotool_socket"
+            fi
+        else
+            log_warn "ydotoolサービスが停止、かつソケットも存在しません"
+            log_info "手動起動方法:"
+            log_info "  1. sudo ydotoold &"
+            log_info "  2. sudo chmod 666 /tmp/.ydotool_socket"
+        fi
+    elif command -v xdotool >/dev/null 2>&1; then
+        available_tools+=("xdotool")
+    fi
+    
+    if [[ ${#available_tools[@]} -gt 0 ]]; then
+        log_success "利用可能なキー送信ツール: ${available_tools[*]}"
+        log_info "自動コミットウィンドウ機能が利用可能です"
+    else
+        log_warn "キー送信ツールが利用できません"
+        log_warn "自動コミットウィンドウ機能は動作しませんが、AI生成機能は利用可能です"
+        log_info "手動でキー送信ツールをインストールしてください:"
+        echo "  - tmux: sudo apt install tmux"
+        if [[ "${XDG_SESSION_TYPE:-}" == "wayland" ]]; then
+            echo "  - ydotool: sudo apt install ydotool ydotoold"
+            echo "  - サービス有効化: sudo systemctl enable --now ydotool"
+        else
+            echo "  - xdotool: sudo apt install xdotool"
+        fi
+        # エラーで終了せず、警告として継続
+    fi
 }
 
 # 依存関係チェック
@@ -252,6 +476,7 @@ show_install_complete() {
     echo "   export GEMINI_API_KEY=\"your-api-key\""
     echo
     echo "2. Lazygitでファイルをステージ後、Ctrl+Gを押してAIコミットメッセージを生成"
+    echo "   ※ 自動コミットウィンドウ機能が有効になります"
     echo
     echo "3. 設定をカスタマイズ:"
     echo "   $CONFIG_DIR/config/default.yml を編集"
@@ -259,6 +484,14 @@ show_install_complete() {
     echo
     echo "4. システム診断:"
     echo "   ai-commit-generator --diagnose"
+    echo
+    echo "5. キー送信ツール確認:"
+    echo "   - tmux環境: 推奨（最も安定）"
+    echo "   - X11環境: xdotool を使用"
+    echo "   - Wayland環境: ydotool を使用"
+    echo "   ※ 自動コミットウィンドウが動作しない場合:"
+    echo "     - ログ確認: /tmp/lazygit_auto_commit.log"
+    echo "     - ydotool手動起動: sudo ydotoold & && sudo chmod 666 /tmp/.ydotool_socket"
     echo
     echo "トラブルシューティング:"
     echo "- ドキュメント: https://github.com/your-repo/ai-commit-generator"
@@ -360,6 +593,10 @@ main() {
                 SKIP_LAZYGIT_CONFIG=true
                 shift
                 ;;
+            --skip-key-tools)
+                SKIP_KEY_TOOLS=true
+                shift
+                ;;
             *)
                 log_error "不明なオプション: $1"
                 show_usage
@@ -386,6 +623,15 @@ main() {
     
     # インストール実行
     check_dependencies
+    
+    # キー送信ツールのインストール（オプション）
+    if [[ "${SKIP_KEY_TOOLS:-false}" != "true" ]]; then
+        install_key_sending_tools
+    else
+        log_info "キー送信ツールのインストールをスキップしました"
+        log_warn "自動コミットウィンドウ機能は利用できません"
+    fi
+    
     create_directories
     install_files
     update_lazygit_config
