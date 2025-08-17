@@ -160,12 +160,17 @@ parse_arguments() {
 
 # 環境変数を設定
 setup_environment() {
-    # Lazygitモードまたはコミットモードの場合はログを抑制
+    # Lazygitモードまたはコミットモードの場合はログを詳細化
     if [[ "${LAZYGIT_MODE:-false}" == "true" ]] || [[ "${COMMIT_MODE:-false}" == "true" ]] || [[ "${LAZYGIT_COMMIT:-false}" == "true" ]]; then
-        export LOG_LEVEL="error"
+        export LOG_LEVEL="info"
         export LOG_FILE="/tmp/ai-commit-generator.log"
         # ログディレクトリを作成
         mkdir -p "$(dirname "$LOG_FILE")"
+        # ログファイルにタイムスタンプ付きヘッダーを追加
+        echo "=== AI Commit Generator ログ開始 ===" >> "$LOG_FILE"
+        echo "開始時刻: $(date)" >> "$LOG_FILE"
+        echo "実行モード: ${LAZYGIT_MODE:+Lazygit}${COMMIT_MODE:+Commit}${LAZYGIT_COMMIT:+LazygitCommit}" >> "$LOG_FILE"
+        echo "======================================" >> "$LOG_FILE"
     else
         # ログレベルを設定
         if [[ -n "${CUSTOM_LOG_LEVEL:-}" ]]; then
@@ -261,14 +266,13 @@ handle_lazygit_commit_error() {
 # Lazygitモード用のメイン処理
 main_process_lazygit() {
     # Lazygitモードでは確認ダイアログは不要（Lazygitで既に確認済み）
-    echo "🤖 AIコミットメッセージを生成中..."
-    echo ""
+    log_info "🤖 AIコミットメッセージを生成中..."
     
     # Git diff分析
-    echo "📊 ステージされたファイルを分析中..."
+    log_info "📊 ステージされたファイルを分析中..."
     local file_analysis
     if ! file_analysis=$(analyze_files 2>/dev/null); then
-        echo "❌ エラー: ステージされたファイルがありません"
+        log_error "❌ エラー: ステージされたファイルがありません"
         echo "ファイルをステージしてから再実行してください。"
         exit 1
     fi
@@ -276,56 +280,46 @@ main_process_lazygit() {
     # Git diff取得
     local diff_content
     if ! diff_content=$(get_git_diff 2>/dev/null); then
-        echo "❌ エラー: Git diffの取得に失敗しました"
+        log_error "❌ エラー: Git diffの取得に失敗しました"
         exit 1
     fi
     
-    echo "✅ ファイル分析完了"
-    echo ""
+    log_info "✅ ファイル分析完了"
     
     # Gemini CLIでメッセージ生成
-    echo "🧠 Gemini AIでコミットメッセージを生成中..."
+    log_info "🧠 Gemini AIでコミットメッセージを生成中..."
     local commit_message
-    if ! commit_message=$(generate_commit_message "$diff_content" "$file_analysis" 2>/dev/null); then
-        echo "❌ エラー: AIコミットメッセージの生成に失敗しました"
+    if ! commit_message=$(generate_commit_message "$diff_content" "$file_analysis" 2>>"${LOG_FILE:-/dev/stderr}"); then
+        log_error "❌ エラー: AIコミットメッセージの生成に失敗しました"
         echo "手動でコミットメッセージを入力してください。"
+        echo "詳細ログ: ${LOG_FILE:-標準エラー出力}"
         exit 1
     fi
     
-    echo "✅ コミットメッセージ生成完了"
-    echo ""
-    echo "📝 生成されたコミットメッセージ:"
-    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    echo "$commit_message"
-    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    echo ""
+    log_info "✅ コミットメッセージ生成完了"
+    log_info "📝 生成されたコミットメッセージ: $commit_message"
     
     # コミットテンプレートを設定
     set_commit_template "$commit_message"
     
-    echo "📝 コミットテンプレートを設定しました"
-    echo "🎯 Lazygitで「c」キーを押してコミット画面を開いてください"
-    echo ""
-    echo "💡 ヒント:"
-    echo "   - 生成されたメッセージが自動入力されます"
-    echo "   - 必要に応じてメッセージを編集できます"
-    echo "   - コミット後、テンプレートは自動でクリアされます"
+    log_info "📝 コミットテンプレートを設定しました"
+    log_info "🎯 Lazygitで「c」キーを押してコミット画面を開いてください"
+    log_info "💡 ヒント: 生成されたメッセージが自動入力されます"
 }
 
 # Lazygitコミット統合用のメイン処理
 main_process_lazygit_commit() {
-    echo "🚀 AI生成 + Lazygitコミット統合モード"
-    echo ""
+    log_info "🚀 AI生成 + Lazygitコミット統合モード"
     
     # エラーハンドリングを強化
     set -e
     trap 'handle_lazygit_commit_error $? $LINENO' ERR
     
     # Git diff分析
-    echo "📊 ステージされたファイルを分析中..."
+    log_info "📊 ステージされたファイルを分析中..."
     local file_analysis
     if ! file_analysis=$(analyze_files 2>/dev/null); then
-        echo "❌ エラー: ステージされたファイルがありません"
+        log_error "❌ エラー: ステージされたファイルがありません"
         echo "ファイルをステージしてから再実行してください。"
         exit 1
     fi
@@ -333,86 +327,62 @@ main_process_lazygit_commit() {
     # Git diff取得
     local diff_content
     if ! diff_content=$(get_git_diff 2>/dev/null); then
-        echo "❌ エラー: Git diffの取得に失敗しました"
+        log_error "❌ エラー: Git diffの取得に失敗しました"
         exit 1
     fi
     
-    echo "✅ ファイル分析完了"
-    echo ""
+    log_info "✅ ファイル分析完了"
     
     # Gemini CLIでメッセージ生成
-    echo "🧠 Gemini AIでコミットメッセージを生成中..."
+    log_info "🧠 Gemini AIでコミットメッセージを生成中..."
     local commit_message
-    if ! commit_message=$(generate_commit_message "$diff_content" "$file_analysis" 2>/dev/null); then
-        echo "❌ エラー: AIコミットメッセージの生成に失敗しました"
+    if ! commit_message=$(generate_commit_message "$diff_content" "$file_analysis" 2>>"${LOG_FILE:-/dev/stderr}"); then
+        log_error "❌ エラー: AIコミットメッセージの生成に失敗しました"
         echo "手動でコミットメッセージを入力してください。"
+        echo "詳細ログ: ${LOG_FILE:-標準エラー出力}"
         exit 1
     fi
     
-    echo "✅ コミットメッセージ生成完了"
-    echo ""
-    echo "📝 生成されたコミットメッセージ:"
-    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    echo "$commit_message"
-    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    echo ""
+    log_info "✅ コミットメッセージ生成完了"
+    log_info "📝 生成されたコミットメッセージ: $commit_message"
     
     # コミットテンプレートを設定
     set_commit_template "$commit_message"
     
-    echo "📝 コミットテンプレートを設定完了"
-    echo ""
-    echo "📋 生成されたコミットメッセージ:"
-    echo "   $(cat /tmp/ai-commit-template.txt 2>/dev/null || echo '取得失敗')"
-    echo ""
-    echo "🎯 コミット概要編集ウィンドウを自動起動準備中..."
-    echo ""
+    log_info "📝 コミットテンプレートを設定完了"
+    log_info "📋 生成されたコミットメッセージ: $(cat /tmp/ai-commit-template.txt 2>/dev/null || echo '取得失敗')"
+    log_info "🎯 コミット概要編集ウィンドウを自動起動準備中..."
     
-    # プログレスバー表示（logWithPtyの機能を活用）
-    echo -n "⏳ 最終準備: "
+    # プログレスバー表示をログに記録
+    log_info "⏳ 最終準備中..."
     for i in {1..10}; do
-        echo -n "█"
         sleep 0.1
     done
-    echo " 完了"
-    echo ""
+    log_info "⏳ 最終準備完了"
     
-    echo "🎉 AI生成完了！"
-    echo "📝 生成されたメッセージがコミット画面に自動入力されます"
-    echo ""
-    echo "🔄 コミット概要編集ウィンドウを自動起動準備中..."
-    echo ""
-    echo "手順:"
-    echo "1. ⚡ Escapeキーを押してこのウィンドウを閉じる"
-    echo "2. 🚀 3秒後に自動的にコミット画面が開きます"
-    echo ""
-    echo "💡 準備完了！Escapeキーを押してください..."
+    log_info "🎉 AI生成完了！"
+    log_info "📝 生成されたメッセージがコミット画面に自動入力されます"
+    log_info "🔄 コミット概要編集ウィンドウを自動起動準備中..."
+    log_info "手順: 1. Escapeキーを押してこのウィンドウを閉じる 2. 3秒後に自動的にコミット画面が開きます"
+    log_info "💡 準備完了！Escapeキーを押してください..."
     
     # 別プロセスで自動キー送信スクリプトを実行（シンプル版）
     nohup "${MAIN_SCRIPT_DIR}/scripts/simple_commit_key.sh" >/dev/null 2>&1 &
     
-    echo ""
-    echo "🔍 デバッグ情報:"
-    echo "   ログファイル: /tmp/simple_commit_key.log"
-    echo "   シンプルキー送信スクリプトがバックグラウンドで実行中..."
-    
-    echo ""
-    echo "💡 ヒント:"
-    echo "   - 生成されたメッセージを確認・編集できます"
-    echo "   - Ctrl+Enterでコミットを実行"
-    echo "   - Escapeでキャンセル"
+    log_info "🔍 デバッグ情報: ログファイル /tmp/simple_commit_key.log"
+    log_info "シンプルキー送信スクリプトがバックグラウンドで実行中..."
+    log_info "💡 ヒント: 生成されたメッセージを確認・編集 / Ctrl+Enterでコミット / Escapeでキャンセル"
 }
 
 # コミットモード用のメイン処理
 main_process_commit() {
-    echo "🚀 AI生成 + 自動コミット モード"
-    echo ""
+    log_info "🚀 AI生成 + 自動コミット モード"
     
     # Git diff分析
-    echo "📊 ステージされたファイルを分析中..."
+    log_info "📊 ステージされたファイルを分析中..."
     local file_analysis
     if ! file_analysis=$(analyze_files 2>/dev/null); then
-        echo "❌ エラー: ステージされたファイルがありません"
+        log_error "❌ エラー: ステージされたファイルがありません"
         echo "ファイルをステージしてから再実行してください。"
         exit 1
     fi
@@ -420,50 +390,42 @@ main_process_commit() {
     # Git diff取得
     local diff_content
     if ! diff_content=$(get_git_diff 2>/dev/null); then
-        echo "❌ エラー: Git diffの取得に失敗しました"
+        log_error "❌ エラー: Git diffの取得に失敗しました"
         exit 1
     fi
     
-    echo "✅ ファイル分析完了"
-    echo ""
+    log_info "✅ ファイル分析完了"
     
     # Gemini CLIでメッセージ生成
-    echo "🧠 Gemini AIでコミットメッセージを生成中..."
+    log_info "🧠 Gemini AIでコミットメッセージを生成中..."
     local commit_message
-    if ! commit_message=$(generate_commit_message "$diff_content" "$file_analysis" 2>/dev/null); then
-        echo "❌ エラー: AIコミットメッセージの生成に失敗しました"
+    if ! commit_message=$(generate_commit_message "$diff_content" "$file_analysis" 2>>"${LOG_FILE:-/dev/stderr}"); then
+        log_error "❌ エラー: AIコミットメッセージの生成に失敗しました"
         echo "手動でコミットメッセージを入力してください。"
+        echo "詳細ログ: ${LOG_FILE:-標準エラー出力}"
         exit 1
     fi
     
-    echo "✅ コミットメッセージ生成完了"
-    echo ""
-    echo "📝 生成されたコミットメッセージ:"
-    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    echo "$commit_message"
-    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    echo ""
+    log_info "✅ コミットメッセージ生成完了"
+    log_info "📝 生成されたコミットメッセージ: $commit_message"
     
     # 一時ファイルにメッセージを保存
     local temp_file="/tmp/ai-commit-message.txt"
     echo "$commit_message" > "$temp_file"
     
-    echo "🎯 コミットエディタを起動中..."
-    echo "   （メッセージを確認・編集してコミットを完了してください）"
-    echo ""
+    log_info "🎯 コミットエディタを起動中..."
+    log_info "メッセージを確認・編集してコミットを完了してください"
     
     # Gitコミットエディタを起動（メッセージを事前入力）
     if git commit --edit --file="$temp_file"; then
-        echo ""
-        echo "🎉 コミット完了！"
-        echo "✅ AIが生成したメッセージでコミットされました"
+        log_info "🎉 コミット完了！"
+        log_info "✅ AIが生成したメッセージでコミットされました"
         
         # 一時ファイルを削除
         rm -f "$temp_file"
     else
         local exit_code=$?
-        echo ""
-        echo "⚠️  コミットがキャンセルまたは失敗しました"
+        log_warn "⚠️  コミットがキャンセルまたは失敗しました"
         
         # 一時ファイルを削除
         rm -f "$temp_file"
@@ -541,10 +503,10 @@ main_process() {
     start_spinner "AIコミットメッセージを生成中..."
     
     local commit_message
-    if ! commit_message=$(generate_commit_message "$diff_content" "$file_analysis" 2>/dev/null); then
+    if ! commit_message=$(generate_commit_message "$diff_content" "$file_analysis" 2>>"${LOG_FILE:-/dev/stderr}"); then
         stop_spinner
         handle_recoverable_error "${ERROR_CODES["GEMINI_API_ERROR"]}" \
-            "手動でコミットメッセージを入力してください" || true
+            "手動でコミットメッセージを入力してください（詳細ログ: ${LOG_FILE:-標準エラー出力}）" || true
         exit "${ERROR_CODES["GEMINI_API_ERROR"]}"
     fi
     

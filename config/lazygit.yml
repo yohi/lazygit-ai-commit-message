@@ -1,5 +1,10 @@
 # Lazygit設定ファイル
 # ~/.config/lazygit/config.yml
+#
+# カスタムコマンド設定:
+# - output: 'logWithPty' - コマンド出力を疑似ターミナルでログに記録（色付き出力対応）
+# - stream: false - ストリーミング出力無効
+# - prompts - インタラクティブプロンプト設定
 
 gui:
   theme:
@@ -12,8 +17,8 @@ customCommands:
     context: 'files'
     command: 'ai-commit-generator --lazygit-mode'
     description: 'AIコミットメッセージ生成'
+    output: 'logWithPty'
     stream: false
-    showOutput: true
     prompts:
       - type: 'confirm'
         title: 'AIコミットメッセージ生成'
@@ -22,5 +27,5 @@ customCommands:
     context: 'files'
     command: 'ai-commit-generator --check-env'
     description: '環境変数チェック'
+    output: 'logWithPty'
     stream: false
-    showOutput: true

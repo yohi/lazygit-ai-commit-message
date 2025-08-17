@@ -156,7 +156,9 @@ call_gemini_cli() {
     local max_tokens="${4:-100}"
     local timeout="${5:-30}"
     
-    log_debug "Gemini CLI実行中（モデル: ${model}）..."
+    log_info "Gemini CLI実行中（モデル: ${model}）..."
+    log_info "プロンプト内容をログに記録中..."
+    log_debug "プロンプト詳細: ${prompt}"
     
     # エラー出力を一時ファイルに保存
     local error_file
@@ -183,11 +185,13 @@ call_gemini_cli() {
         return 1
     fi
     if [[ -n "$TIMEOUT_CMD" ]]; then
+        log_info "Gemini APIリクエスト送信中..."
         if ("$TIMEOUT_CMD" "${timeout}" "$(get_gemini_command)" --prompt="$prompt" 2>"$error_file") >"$temp_output"; then
             result=$(cat "$temp_output")
             rm -f "$temp_output" "$error_file"
-            log_debug "成功: --promptオプション（timeoutあり）"
-            log_debug "レスポンス長: ${#result} 文字"
+            log_info "Gemini APIレスポンス受信成功（timeoutあり）"
+            log_info "レスポンス長: ${#result} 文字"
+            log_debug "生成されたコミットメッセージ: ${result}"
         else
             exit_code=$?
             local error_output=""
@@ -202,12 +206,14 @@ call_gemini_cli() {
         fi
     else
         # timeout コマンドが利用できない場合のfallback
-        log_debug "timeoutコマンドが利用できないため、通常実行します"
+        log_info "timeoutコマンドが利用できないため、通常実行します"
+        log_info "Gemini APIリクエスト送信中..."
         if ("$(get_gemini_command)" --prompt="$prompt" 2>"$error_file") >"$temp_output"; then
             result=$(cat "$temp_output")
             rm -f "$temp_output" "$error_file"
-            log_debug "成功: --promptオプション（timeoutなし）"
-            log_debug "レスポンス長: ${#result} 文字"
+            log_info "Gemini APIレスポンス受信成功（timeoutなし）"
+            log_info "レスポンス長: ${#result} 文字"
+            log_debug "生成されたコミットメッセージ: ${result}"
         else
             exit_code=$?
             local error_output=""
@@ -232,19 +238,22 @@ process_response() {
     local response="$1"
     local max_length="${2:-72}"
     
-    log_debug "レスポンス後処理中..."
-    log_debug "元のレスポンス長: ${#response} 文字"
+    log_info "レスポンス後処理中..."
+    log_info "元のレスポンス長: ${#response} 文字"
+    log_debug "元のレスポンス内容: ${response}"
     
     # 不要な行を除去して最初の有効な行を取得
-    response=$(echo "$response" | grep -v "Loaded cached credentials" | head -n 1 | sed 's/^[[:space:]]*//' | sed 's/[[:space:]]*$//')
+    # ログ行やキャッシュメッセージを除外
+    response=$(echo "$response" | grep -v "Loaded cached credentials" | grep -v "^\[.*\] \[.*\]" | grep -v "^INFO\|^DEBUG\|^WARN\|^ERROR" | head -n 1 | sed 's/^[[:space:]]*//' | sed 's/[[:space:]]*$//')
     
     # 文字数制限を適用
     if [[ ${#response} -gt $max_length ]]; then
         response="${response:0:$max_length}"
-        log_warn "メッセージが最大長を超えたため切り詰められました"
+        log_warn "メッセージが最大長（${max_length}文字）を超えたため切り詰められました"
+        log_info "切り詰め後の長さ: ${#response} 文字"
     fi
     
-    log_debug "処理後のメッセージ: $response"
+    log_info "処理後のメッセージ: ${response}"
     echo "$response"
 }
 
