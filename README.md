@@ -297,3 +297,5 @@ MIT License - 詳細は [LICENSE](LICENSE) ファイルを参照
 - 🐛 [Issues](https://github.com/your-repo/ai-commit-generator/issues)
 - 💬 [Discussions](https://github.com/your-repo/ai-commit-generator/discussions)
 # Test staged only
+# Gemini API test
+# Another Gemini test
