@@ -296,3 +296,4 @@ MIT License - 詳細は [LICENSE](LICENSE) ファイルを参照
 - 📚 [Wiki](https://github.com/your-repo/ai-commit-generator/wiki)
 - 🐛 [Issues](https://github.com/your-repo/ai-commit-generator/issues)
 - 💬 [Discussions](https://github.com/your-repo/ai-commit-generator/discussions)
+# Test staged only
