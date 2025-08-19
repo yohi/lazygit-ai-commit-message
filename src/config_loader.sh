@@ -3,11 +3,11 @@
 
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 CONFIG_DIR="${SCRIPT_DIR}/../config"
 USER_CONFIG_DIR="${HOME}/.config/ai-commit-generator"
 
-# YAMLをJSONに変換（yq v4形式に対応）
+# YAMLをJSONに変換（yq v4必須）
 yaml_to_json() {
     local yaml_file="$1"
     
@@ -16,18 +16,29 @@ yaml_to_json() {
         return 0
     fi
     
-    # yq v4の場合
-    if yq --version 2>/dev/null | grep -q "version v4"; then
+    # yq v4の確認
+    if ! command -v yq >/dev/null 2>&1; then
+        echo "❌ エラー: yqがインストールされていません" >&2
+        echo "   インストール方法:" >&2
+        echo "   brew install yq" >&2
+        echo "   または: https://github.com/mikefarah/yq/#install" >&2
+        return 1
+    fi
+    
+    # yq v4を使用してJSONに変換
+    if yq --version 2>/dev/null | grep -E -q "version v4|mikefarah"; then
         yq eval -o=json "$yaml_file" 2>/dev/null || echo "{}"
-    # yq v3またはmikefarahのyqの場合
-    elif yq --version 2>/dev/null | grep -q "mikefarah"; then
-        yq e -o=json "$yaml_file" 2>/dev/null || echo "{}"
-    # 古いyqまたは利用不可の場合
     else
-        # YAMLの基本的な解析を試行
-        parse_simple_yaml "$yaml_file"
+        echo "❌ エラー: yq v4が必要です" >&2
+        echo "   現在のバージョン: $(yq --version 2>/dev/null || echo '不明')" >&2
+        echo "   必要なバージョン: yq v4.x (mikefarah/yq)" >&2
+        echo "   インストール方法:" >&2
+        echo "   brew install yq" >&2
+        echo "   または: https://github.com/mikefarah/yq/#install" >&2
+        return 1
     fi
 }
+
 
 # 簡単なYAML解析（フォールバック）
 parse_simple_yaml() {
@@ -127,8 +138,23 @@ load_default_config() {
 
 # ユーザー設定を読み込み
 load_user_config() {
-    local user_config="${USER_CONFIG_DIR}/config.yml"
-    yaml_to_json "$user_config"
+    # ユーザー設定ファイルの候補
+    local user_configs=(
+        "${USER_CONFIG_DIR}/config.yml"
+        "${USER_CONFIG_DIR}/config/default.yml"
+        # 既存の設定ファイルも確認
+        "${HOME}/.config/ai-commit-generator/config/default.yml"
+    )
+    
+    for config_file in "${user_configs[@]}"; do
+        if [[ -f "$config_file" ]]; then
+            yaml_to_json "$config_file"
+            return 0
+        fi
+    done
+    
+    # 設定ファイルが見つからない場合は空のJSONを返す
+    echo "{}"
 }
 
 # 設定をマージして読み込み
@@ -235,10 +261,10 @@ validate_config() {
         # 必須設定のチェック
         local model
         local language
-        model=$(echo "$config" | jq -r '.gemini.model // empty' 2>/dev/null)
-        language=$(echo "$config" | jq -r '.commit_message.language // empty' 2>/dev/null)
+        model=$(echo "$config" | jq -r '.gemini.model // null' 2>/dev/null)
+        language=$(echo "$config" | jq -r '.commit_message.language // null' 2>/dev/null)
         
-        if [[ -z "$model" ]] || [[ "$model" == "null" ]]; then
+        if [[ -z "$model" ]] || [[ "$model" == "null" ]] || [[ "$model" == "empty" ]]; then
             echo "エラー: Geminiモデルが設定されていません" >&2
             return 1
         fi
@@ -252,7 +278,7 @@ validate_config() {
 }
 
 # スクリプトが直接実行された場合
-if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
+if [[ "${BASH_SOURCE[0]:-$0}" == "${0}" ]] && [[ $# -gt 0 ]]; then
     case "${1:-}" in
         "sample")
             generate_sample_config
