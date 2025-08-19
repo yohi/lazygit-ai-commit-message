@@ -1,18 +1,81 @@
-# Lazygit設定ファイルのカスタムコマンド設定
-# ~/.config/lazygit/config.yml に追加してください
+# Lazygit設定ファイル
+# ~/.config/lazygit/config.yml
+#
+# カスタムコマンド設定:
+# - output: 'logWithPty' - コマンド出力を疑似ターミナルでログに記録（色付き出力対応）
+# - stream: false - ストリーミング出力無効
+# - prompts - インタラクティブプロンプト設定
+
+gui:
+  theme:
+    lightTheme: false
+  commitLength:
+    show: true
 
 customCommands:
-  - key: '<c-g>'
-    context: 'files'
-    command: 'ai-commit-generator'
-    description: 'AIコミットメッセージ生成'
-    subprocess: true
+  - key: "<c-g>"
+    context: "files"
+    command: "ai-commit-generator --lazygit-mode"
+    description: "🚀 AI生成→自作ウィンドウ→コミット（統合フロー）"
+    output: "logWithPty"
+    stream: false
     prompts:
-      - type: 'confirm'
-        title: 'AIコミットメッセージ生成'
-        body: '生成AIがコミットメッセージを作成します。続行しますか？'
-  - key: '<c-x>'
-    context: 'files'
-    command: 'ai-commit-generator --check-env'
-    description: '環境変数チェック'
-    subprocess: true
+      - type: "confirm"
+        title: "🚀 AI統合フロー"
+        body: "AI生成→自作コミットウィンドウで編集→コミットを実行します。続行しますか？"
+  - key: "<c-a>"
+    context: "files"
+    command: "ai-commit-generator --lazygit-commit"
+    description: "AI生成 + 自動コミット画面"
+    output: "logWithPty"
+    stream: false
+    prompts:
+      - type: "confirm"
+        title: "AI生成 + 自動コミット"
+        body: "AIが生成したメッセージで自動的にコミット画面を開きます。続行しますか？"
+  - key: "<c-d>"
+    context: "files"
+    command: "ai-commit-generator --direct-commit"
+    description: "AI生成 + 確認付き直接コミット（Wayland対応）"
+    output: "logWithPty"
+    stream: false
+    prompts:
+      - type: "confirm"
+        title: "AI生成 + 直接コミット"
+        body: "AIが生成したメッセージを確認後、直接コミットします。続行しますか？"
+  - key: "<c-x>"
+    context: "files"
+    command: "ai-commit-generator --check-env"
+    description: "環境変数チェック"
+    output: "logWithPty"
+    stream: false
+  - key: "<c-w>"
+    context: "files"
+    command: "ai-commit-generator --custom-window"
+    description: "AI生成 + カスタムTUIウィンドウ"
+    output: "logWithPty"
+    stream: false
+    prompts:
+      - type: "confirm"
+        title: "AI生成 + カスタムウィンドウ"
+        body: "AIが生成したメッセージをカスタムウィンドウで編集します。続行しますか？"
+  - key: "<c-s>"
+    context: "files"
+    command: "ai-commit-generator --smart-mode"
+    description: "🚀 スマートモード（AI生成→自動ウィンドウ→コミット）"
+    output: "logWithPty"
+    stream: false
+    prompts:
+      - type: "confirm"
+        title: "🚀 スマートモード"
+        body: "AI生成→カスタムウィンドウで編集→コミットを自動実行します。続行しますか？"
+  - key: "<c-o>"
+    context: "files"
+    command: "ai-commit-generator --auto-window --lazygit-mode"
+    description: "AI生成→自動ウィンドウ起動（Lazygit統合）"
+    output: "logWithPty"
+    stream: false
+    prompts:
+      - type: "confirm"
+        title: "AI生成 + 自動ウィンドウ"
+        body: "AI生成完了後に自動でカスタムウィンドウを起動します。続行しますか？"

@@ -58,13 +58,49 @@ APIキーの取得: [Google AI Studio](https://makersuite.google.com/app/apikey)
 
 ## 使用方法
 
-### 基本的な使用方法
+### Lazygit内でのキーバインド
+
+| キー | 機能 | 環境 | 説明 |
+|------|------|------|------|
+| **Ctrl+G** | 🚀 新統合フロー | 全環境 | AI生成→自作ウィンドウ→コミット（**推奨**） |
+| **Ctrl+A** | 自動コミット画面 | X11/tmux | AI生成後に自動的にコミット画面を表示 |
+| **Alt+C** | 確認付き直接コミット | Wayland | AI生成→確認→直接コミット（Wayland対応） |
+| **Ctrl+W** | カスタムTUIウィンドウ | 全環境 | AI生成→カスタムウィンドウで編集 |
+| **Ctrl+S** | スマートモード | 全環境 | AI生成→自動ウィンドウ→コミット |
+| **Alt+W** | 自動ウィンドウ起動 | 全環境 | AI生成→自動ウィンドウ起動（Lazygit統合） |
+| **Ctrl+X** | 環境変数チェック | 全環境 | AI環境とツールの診断 |
+
+### 🚀 新統合フロー（推奨）
+
+**Ctrl+G** キーで利用できる新しい統合フローです：
 
 1. Lazygitを起動
 2. ファイルをステージ
-3. `Ctrl+G` を押してAIコミットメッセージ生成を開始
-4. 生成されたメッセージを確認・編集
-5. コミット実行
+3. `Ctrl+G` を押して統合フローを開始
+4. **確認メッセージ** → `Enter` で続行
+5. **AI分析・生成**: ステージされたファイルを自動分析してコミットメッセージを生成
+6. **自作ウィンドウ**: 生成されたメッセージが事前入力された状態で専用編集ウィンドウが自動表示
+7. **編集・確認**: 必要に応じてメッセージを編集、問題なければそのまま確認
+8. **自動コミット**: ワンクリックでコミット完了
+
+#### 統合フローの特徴
+- ✅ **シームレス**: 全工程が一つのフローで完結
+- ✅ **効率的**: 手動作業を最小限に削減
+- ✅ **柔軟性**: 生成されたメッセージの編集が簡単
+- ✅ **安全性**: 最終確認画面でメッセージを確認可能
+
+### 🌟 その他の使用方法
+
+#### Alt+C: 確認付き直接コミット（Wayland対応）
+1. Lazygitを起動
+2. ファイルをステージ
+3. `Alt+C` を押してAI生成 + 確認付き直接コミット
+4. 生成されたメッセージを確認
+5. オプション選択:
+   - `y`: そのままコミット
+   - `e`: メッセージ編集
+   - `p`: コミット+プッシュ
+   - `n`: キャンセル
 
 ### コマンドライン使用
 
@@ -72,18 +108,42 @@ APIキーの取得: [Google AI Studio](https://makersuite.google.com/app/apikey)
 # 基本実行
 ai-commit-generator
 
-# システム診断
-ai-commit-generator --diagnose
+# 各種モード
+ai-commit-generator --smart-mode        # スマートモード（推奨）
+ai-commit-generator --custom-window     # カスタムTUIウィンドウ
+ai-commit-generator --direct-commit     # 確認付き直接コミット
+ai-commit-generator --generate-only     # AI生成のみ
 
-# ドライラン（実際の生成なし）
-ai-commit-generator --dry-run
+# 診断・デバッグ
+ai-commit-generator --diagnose          # システム診断
+ai-commit-generator --check-env         # 環境変数チェック
+ai-commit-generator --test-gemini       # Gemini CLI接続テスト
+ai-commit-generator --dry-run          # ドライラン（実際の生成なし）
+ai-commit-generator --log-level debug  # デバッグモード
 
-# デバッグモード
-ai-commit-generator --log-level debug
-
-# ヘルプ表示
-ai-commit-generator --help
+# ヘルプ・情報
+ai-commit-generator --help             # ヘルプ表示
+ai-commit-generator --version          # バージョン情報
+ai-commit-generator --generate-sample-config  # サンプル設定生成
 ```
+
+### 🔧 高度な機能
+
+#### カスタムウィンドウ機能
+- **dialog/whiptail対応**: システムの利用可能エディターを自動検出
+- **メッセージ事前入力**: AI生成メッセージが自動的に表示
+- **リアルタイム編集**: ユーザーが自由にメッセージを編集可能
+- **確認ダイアログ**: コミット前の最終確認
+
+#### スマートモード
+- **ワンクリック実行**: AI生成→編集→コミットを一連で自動実行
+- **エラーリカバリ**: 各ステップでのエラーハンドリング
+- **プログレス表示**: 処理状況のリアルタイム表示
+
+#### 環境適応機能
+- **自動環境検出**: X11/Wayland/tmux環境を自動識別
+- **フォールバック機能**: エディターが利用できない環境での代替手段
+- **権限管理**: 必要な権限やグループの自動設定提案
 
 ## 設定
 
@@ -242,6 +302,29 @@ ai-commit-generator
 - **プロキシ環境**: 環境変数でプロキシ設定
 - **ファイアウォール**: `ai.google.dev`へのアクセス許可
 
+### ウィンドウ表示問題
+
+#### 症状
+生成AI処理完了後、ウィンドウが自動で開かない
+
+#### 解決策
+1. **TTY環境の確認**: `tty`コマンドで端末が利用可能か確認
+2. **対話モード強制**: `--force-interactive`オプションを使用
+3. **エディター確認**: `dialog`, `whiptail`, `nano`のインストール状況確認
+4. **ログ確認**: `/tmp/ai-commit-generator.log`でエラー詳細を確認
+
+### 環境別の問題
+
+#### Wayland環境
+- **対応キー**: `Alt+C` (確認付き直接コミット)
+- **ツール**: `ydotool`の自動インストール・設定
+- **権限**: ユーザーの`input`グループ追加が必要
+
+#### X11/tmux環境  
+- **対応キー**: `Ctrl+A` (自動コミット画面)
+- **ツール**: `xdotool`の利用
+- **環境変数**: `DISPLAY`の正しい設定
+
 ## 貢献
 
 1. フォークを作成
@@ -265,3 +348,6 @@ MIT License - 詳細は [LICENSE](LICENSE) ファイルを参照
 - 📚 [Wiki](https://github.com/your-repo/ai-commit-generator/wiki)
 - 🐛 [Issues](https://github.com/your-repo/ai-commit-generator/issues)
 - 💬 [Discussions](https://github.com/your-repo/ai-commit-generator/discussions)
+# Test staged only
+# Gemini API test
+# Another Gemini test
