@@ -26,7 +26,7 @@ yaml_to_json() {
     fi
     
     # yq v4を使用してJSONに変換
-    if yq --version 2>/dev/null | grep -q "version v4\|mikefarah"; then
+    if yq --version 2>/dev/null | grep -E -q "version v4|mikefarah"; then
         yq eval -o=json "$yaml_file" 2>/dev/null || echo "{}"
     else
         echo "❌ エラー: yq v4が必要です" >&2

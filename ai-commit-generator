@@ -4,22 +4,52 @@
 
 set -euo pipefail
 
-# スクリプトのディレクトリを取得（symlinkを解決）
-MAIN_SCRIPT_PATH="${BASH_SOURCE[0]}"
-# symlinkの場合は実際のパスを解決
-if [[ -L "$MAIN_SCRIPT_PATH" ]]; then
-    MAIN_SCRIPT_PATH="$(readlink -f "$MAIN_SCRIPT_PATH")"
-fi
-MAIN_SCRIPT_DIR="$(cd "$(dirname "$MAIN_SCRIPT_PATH")" && pwd)"
-SRC_DIR="${MAIN_SCRIPT_DIR}/src"
+# 終了時にcommit.templateをクリーンアップ
+cleanup_on_exit() {
+    # コミットテンプレートをクリア
+    git config --unset commit.template 2>/dev/null || true
+    # 一時テンプレートファイルを削除
+    rm -f "/tmp/ai-commit-template.txt" 2>/dev/null || true
+}
 
-# スクリプトパスを解決する関数
+# EXIT trapでクリーンアップを実行
+trap cleanup_on_exit EXIT
+
+# ポータブルなsymlinkの解決
+resolve_symlink() {
+    local target="$1"
+    while [[ -L "$target" ]]; do
+        local link_target
+        if command -v readlink >/dev/null 2>&1; then
+            link_target="$(readlink "$target")"
+        else
+            # readlinkが利用できない場合のフォールバック
+            link_target="$(ls -l "$target" | sed 's/.*-> //')"
+        fi
+        
+        # 相対パスの場合は絶対パスに変換
+        if [[ "${link_target:0:1}" != "/" ]]; then
+            target="$(dirname "$target")/$link_target"
+        else
+            target="$link_target"
+        fi
+    done
+    echo "$target"
+}
+
+# スクリプトのディレクトリを取得（環境変数で上書き可能）
+MAIN_SCRIPT_PATH="$(resolve_symlink "${BASH_SOURCE[0]}")"
+MAIN_SCRIPT_DIR="$(cd "$(dirname "$MAIN_SCRIPT_PATH")" && pwd)"
+
+# AI_COMMIT_SCRIPTS_DIR環境変数で上書き可能
+AI_COMMIT_SCRIPTS_DIR="${AI_COMMIT_SCRIPTS_DIR:-$MAIN_SCRIPT_DIR}"
+SRC_DIR="${AI_COMMIT_SCRIPTS_DIR}/src"
+
+# スクリプトパスを解決する関数（ポータブル版）
 find_script() {
     local script_name="$1"
-    if [[ -f "${MAIN_SCRIPT_DIR}/scripts/${script_name}" ]]; then
-        echo "${MAIN_SCRIPT_DIR}/scripts/${script_name}"
-    elif [[ -f "/home/y_ohi/dotfiles/lazygit/ai-commit-generator/scripts/${script_name}" ]]; then
-        echo "/home/y_ohi/dotfiles/lazygit/ai-commit-generator/scripts/${script_name}"
+    if [[ -f "${AI_COMMIT_SCRIPTS_DIR}/scripts/${script_name}" ]]; then
+        echo "${AI_COMMIT_SCRIPTS_DIR}/scripts/${script_name}"
     else
         echo ""
     fi
@@ -140,15 +170,36 @@ parse_arguments() {
                 exit 0
                 ;;
             --test-gemini)
-                "$(find_script test_gemini.sh)"
+                local test_script
+                test_script="$(find_script test_gemini.sh)"
+                if [[ -n "$test_script" && -x "$test_script" ]]; then
+                    "$test_script"
+                else
+                    echo "❌ エラー: test_gemini.sh が見つからないか実行可能ではありません" >&2
+                    exit 1
+                fi
                 exit 0
                 ;;
             --debug-gemini)
-                "$(find_script debug_gemini.sh)"
+                local debug_script
+                debug_script="$(find_script debug_gemini.sh)"
+                if [[ -n "$debug_script" && -x "$debug_script" ]]; then
+                    "$debug_script"
+                else
+                    echo "❌ エラー: debug_gemini.sh が見つからないか実行可能ではありません" >&2
+                    exit 1
+                fi
                 exit 0
                 ;;
             --check-env)
-                exec "$(find_script env_check.sh)"
+                local env_script
+                env_script="$(find_script env_check.sh)"
+                if [[ -n "$env_script" && -x "$env_script" ]]; then
+                    exec "$env_script"
+                else
+                    echo "❌ エラー: env_check.sh が見つからないか実行可能ではありません" >&2
+                    exit 1
+                fi
                 ;;
             --dry-run)
                 dry_run=true
@@ -449,7 +500,14 @@ main_process_lazygit_commit() {
     log_info "💡 準備完了！Escapeキーを押してください..."
 
     # 別プロセスで自動コミットウィンドウ表示スクリプトを実行
-    nohup "$(find_script lazygit_auto_commit.sh)" >/dev/null 2>&1 &
+    local auto_commit_script
+    auto_commit_script="$(find_script lazygit_auto_commit.sh)"
+    if [[ -n "$auto_commit_script" && -x "$auto_commit_script" ]]; then
+        nohup "$auto_commit_script" >/dev/null 2>&1 &
+    else
+        log_error "❌ エラー: lazygit_auto_commit.sh が見つからないか実行可能ではありません"
+        exit 1
+    fi
 
     log_info "🔍 デバッグ情報: ログファイル /tmp/lazygit_auto_commit.log"
     log_info "自動コミットウィンドウ表示スクリプトがバックグラウンドで実行中..."
