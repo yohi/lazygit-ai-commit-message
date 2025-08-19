@@ -266,13 +266,15 @@ process_response() {
         grep -v "元のレスポンス" | \
         grep -v "処理後のメッセージ" | \
         grep -v "完了" | \
+        grep -v "フォールバック" | \
+        grep -v "ファイルを追加" | \
         grep -v "^$")
     
     # コミットメッセージらしい行を抽出（一般的なパターン）
     local clean_message=""
     while IFS= read -r line; do
         # 明らかにコミットメッセージらしい行をチェック
-        if [[ "$line" =~ ^(feat|fix|docs|style|refactor|test|chore)(\([^)]+\))?:[[:space:]] ]] || \
+        if [[ "$line" =~ ^(feat|fix|docs|style|refactor|test|chore) ]] || \
            [[ "$line" =~ ^[A-Z][a-z].* ]] || \
            [[ "$line" =~ (追加|更新|削除|変更) ]] || \
            [[ "$line" =~ ^.*ファイルを(追加|更新|削除|変更) ]] || \
