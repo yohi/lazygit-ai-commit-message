@@ -116,7 +116,7 @@ EOF
   1. ネットワーク接続を確認
   2. しばらく待ってから再試行
   3. 設定でタイムアウト時間を延長:
-     ~/.config/ai-commit-generator/config.yml
+     ${HOME}/.config/ai-commit-generator/config.yml
      gemini:
        timeout: 60  # 秒数を増加
 
@@ -178,13 +178,13 @@ EOF
 
 解決方法:
   1. 設定ファイルの構文を確認:
-     ~/.config/ai-commit-generator/config.yml
+     ${HOME}/.config/ai-commit-generator/config.yml
      
   2. サンプル設定を生成:
      ai-commit-generator --generate-sample-config
      
   3. 設定をリセット:
-     rm ~/.config/ai-commit-generator/config.yml
+     rm ${HOME}/.config/ai-commit-generator/config.yml
 
 エラー詳細: $context
 EOF
@@ -196,13 +196,13 @@ EOF
 
 初回セットアップ手順:
   1. 設定ディレクトリを作成:
-     mkdir -p ~/.config/ai-commit-generator
+     mkdir -p ${HOME}/.config/ai-commit-generator
      
   2. サンプル設定ファイルを生成:
      ai-commit-generator --generate-sample-config
      
   3. 設定ファイルを編集（オプション）:
-     ~/.config/ai-commit-generator/config/default.yml
+     ${HOME}/.config/ai-commit-generator/config/default.yml
      
   4. Gemini APIキーを設定:
      export GEMINI_API_KEY="your-api-key"
@@ -242,7 +242,7 @@ EOF
   3. ログファイルを確認
   4. GitHub Issuesで報告
 
-ログの場所: \$HOME/.config/ai-commit-generator/logs/
+ログの場所: ${HOME}/.config/ai-commit-generator/logs/
 EOF
             ;;
     esac

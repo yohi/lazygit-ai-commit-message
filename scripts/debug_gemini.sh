@@ -89,10 +89,10 @@ echo
 
 # ログファイルがあるかチェック
 echo "6. ログ確認"
-if [[ -f ~/.gemini/logs/gemini.log ]]; then
+if [[ -f "${HOME}/.gemini/logs/gemini.log" ]]; then
     echo "- Geminiログファイル発見"
     echo "最新のログエントリ:"
-    tail -5 ~/.gemini/logs/gemini.log || echo "ログ読み取り失敗"
+    tail -5 "${HOME}/.gemini/logs/gemini.log" || echo "ログ読み取り失敗"
 else
     echo "- Geminiログファイルなし"
 fi

@@ -68,13 +68,21 @@ Generate a commit message:
 EOF
     else
         cat <<EOF
-以下の変更をコミットメッセージにしてください。50文字以内、日本語。
+以下のGit変更を分析して、適切なコミットメッセージを1行で生成してください。
+
+要求事項:
+- 50文字以内の日本語で記述
+- 「追加」「更新」「削除」「修正」などの動詞を使用
+- 説明文や挨拶は不要、コミットメッセージのみを出力
+- 例: "ユーザー認証機能を追加", "設定ファイルを更新"
 
 変更内容:
 ${file_analysis}
 
 Git Diff:
 ${diff_content}
+
+コミットメッセージ:
 EOF
     fi
 }
@@ -168,15 +176,13 @@ call_gemini_cli() {
         return 1
     fi
     
-    # Gemini CLIを実行（このCLIは標準入力とプロンプトオプションをサポート）
+    # Gemini CLIを実行
     local result=""
     local exit_code=0
     
-    # --promptオプションを使用（Docker環境での互換性のため）
-    log_debug "--promptオプションでGemini CLI実行中..."
+    log_debug "Gemini CLI実行中（タイムアウト: ${timeout}秒）..."
     
-    # Gemini CLIを実行（ログ出力を完全に分離）
-    # Docker環境では--promptオプションを使用（stdin使用でハングするため）
+    # 一時ファイルを作成
     local temp_output
     temp_output=$(mktemp)
     if [[ ! -f "$temp_output" ]]; then
@@ -184,47 +190,43 @@ call_gemini_cli() {
         rm -f "$error_file"
         return 1
     fi
+    
+    # Gemini CLIを実行
     if [[ -n "$TIMEOUT_CMD" ]]; then
-        log_info "Gemini APIリクエスト送信中..."
-        if ("$TIMEOUT_CMD" "${timeout}" "$(get_gemini_command)" --prompt="$prompt" 2>"$error_file") >"$temp_output"; then
-            result=$(cat "$temp_output" 2>/dev/null | grep -v "Data collection is disabled" | grep -v "Loaded cached credentials" | head -1)
-            rm -f "$temp_output" "$error_file"
-            log_info "Gemini APIレスポンス受信成功（timeoutあり）"
-            log_info "レスポンス長: ${#result} 文字"
-            log_debug "生成されたコミットメッセージ: ${result}"
+        log_info "Gemini APIリクエスト送信中 (タイムアウト: ${timeout}秒)..."
+        if "$TIMEOUT_CMD" "${timeout}" "$(get_gemini_command)" --prompt="$prompt" >"$temp_output" 2>"$error_file"; then
+            result=$(cat "$temp_output" 2>/dev/null)
+            exit_code=0
         else
             exit_code=$?
-            local error_output=""
-            error_output=$(cat "$error_file" 2>/dev/null || echo "")
-            result=$(cat "$temp_output" 2>/dev/null | grep -v "Data collection is disabled" | grep -v "Loaded cached credentials" | head -1 || echo "")
-            rm -f "$temp_output" "$error_file"
-            if handle_gemini_error "$exit_code" "$error_output" "$result" "$timeout" "$prompt"; then
-                return 0
-            else
-                return $exit_code
-            fi
+            result=$(cat "$temp_output" 2>/dev/null || echo "")
         fi
     else
-        # timeout コマンドが利用できない場合のfallback
-        log_info "timeoutコマンドが利用できないため、通常実行します"
         log_info "Gemini APIリクエスト送信中..."
-        if ("$(get_gemini_command)" --prompt="$prompt" 2>"$error_file") >"$temp_output"; then
-            result=$(cat "$temp_output" 2>/dev/null | grep -v "Data collection is disabled" | grep -v "Loaded cached credentials" | head -1)
-            rm -f "$temp_output" "$error_file"
-            log_info "Gemini APIレスポンス受信成功（timeoutなし）"
-            log_info "レスポンス長: ${#result} 文字"
-            log_debug "生成されたコミットメッセージ: ${result}"
+        if "$(get_gemini_command)" --prompt="$prompt" >"$temp_output" 2>"$error_file"; then
+            result=$(cat "$temp_output" 2>/dev/null)
+            exit_code=0
         else
             exit_code=$?
-            local error_output=""
-            error_output=$(cat "$error_file" 2>/dev/null || echo "")
-            result=$(cat "$temp_output" 2>/dev/null | grep -v "Data collection is disabled" | grep -v "Loaded cached credentials" | head -1 || echo "")
-            rm -f "$temp_output" "$error_file"
-            if handle_gemini_error "$exit_code" "$error_output" "$result" "$timeout" "$prompt"; then
-                return 0
-            else
-                return $exit_code
-            fi
+            result=$(cat "$temp_output" 2>/dev/null || echo "")
+        fi
+    fi
+    
+    # 一時ファイルをクリーンアップ
+    local error_output=""
+    error_output=$(cat "$error_file" 2>/dev/null || echo "")
+    rm -f "$temp_output" "$error_file"
+    
+    # 結果を確認
+    if [[ $exit_code -eq 0 ]]; then
+        log_info "Gemini APIレスポンス受信成功"
+        log_info "レスポンス長: ${#result} 文字"
+        log_debug "生成されたコミットメッセージ: ${result}"
+    else
+        if handle_gemini_error "$exit_code" "$error_output" "$result" "$timeout" "$prompt"; then
+            return 0
+        else
+            return $exit_code
         fi
     fi
     
@@ -244,16 +246,21 @@ process_response() {
     log_debug "元のレスポンス内容: ${response}"
     
     # 不要な行を除去して実際のコミットメッセージを抽出
-    # まず明らかに除外すべき行を削除
+    # AI応答の冗長な表現と技術的な情報を除去
     response=$(echo "$response" | \
         grep -v "Loaded cached credentials" | \
         grep -v "Data collection is disabled" | \
         grep -v "^\[20[0-9][0-9]-[0-9][0-9]-[0-9][0-9].*\]" | \
-        grep -v "^INFO" | \
-        grep -v "^DEBUG" | \
-        grep -v "^WARN" | \
-        grep -v "^ERROR" | \
+        grep -v "^\[INFO\]" | \
+        grep -v "^\[DEBUG\]" | \
+        grep -v "^\[WARN\]" | \
+        grep -v "^\[ERROR\]" | \
         grep -v "Gemini CLI" | \
+        grep -v "はい.*承知" | \
+        grep -v "以下に.*提案" | \
+        grep -v "コミットメッセージを.*提案" | \
+        grep -v "適切なコミットメッセージ" | \
+        grep -v "以下のようなコミットメッセージ" | \
         grep -v "プロンプト" | \
         grep -v "レスポンス" | \
         grep -v "実行中" | \
@@ -267,28 +274,54 @@ process_response() {
         grep -v "処理後のメッセージ" | \
         grep -v "完了" | \
         grep -v "フォールバック" | \
-        grep -v "ファイルを追加" | \
         grep -v "^$")
     
-    # コミットメッセージらしい行を抽出（一般的なパターン）
+    # コミットメッセージらしい行を抽出（改善されたパターン）
     local clean_message=""
     while IFS= read -r line; do
-        # 明らかにコミットメッセージらしい行をチェック
-        if [[ "$line" =~ ^(feat|fix|docs|style|refactor|test|chore) ]] || \
-           [[ "$line" =~ ^[A-Z][a-z].* ]] || \
-           [[ "$line" =~ (追加|更新|削除|変更) ]] || \
-           [[ "$line" =~ ^.*ファイルを(追加|更新|削除|変更) ]] || \
-           [[ ${#line} -ge 10 && ${#line} -le 100 ]]; then
-            if [[ -z "$clean_message" ]]; then
-                clean_message="$line"
-                break
-            fi
+        # 空行や不適切な行をスキップ
+        [[ -z "$line" ]] && continue
+        [[ "$line" =~ ^[[:space:]]*$ ]] && continue
+        
+        # 明らかに不適切な行を除外
+        if [[ "$line" =~ ^(はい|承知|以下|について|です|ます|すみません) ]] || \
+           [[ "$line" =~ (してください|お願い|いかがでしょうか|どうでしょう) ]] || \
+           [[ "$line" =~ ^[\*\-\+\.].*$ ]] || \
+           [[ ${#line} -lt 5 ]] || \
+           [[ ${#line} -gt 100 ]]; then
+            continue
+        fi
+        
+        # コミットメッセージらしい行をチェック（優先順位順）
+        if [[ "$line" =~ ^(feat|fix|docs|style|refactor|test|chore|build|ci|perf|revert) ]] || \
+           [[ "$line" =~ ^(Add|Update|Delete|Remove|Fix|Create|Modify|Change) ]] || \
+           [[ "$line" =~ ^(追加|更新|削除|変更|修正|作成|改善|実装) ]] || \
+           [[ "$line" =~ ^[A-Z][a-z].*[^.:!?]$ ]] || \
+           [[ "$line" =~ ファイル.*[追加更新削除変更] ]] || \
+           [[ "$line" =~ [追加更新削除変更].*ファイル ]]; then
+            clean_message="$line"
+            break
         fi
     done <<< "$response"
     
-    # まだ見つからない場合は最初の有効そうな行を使用
+    # まだ見つからない場合は最初の有効そうな行を使用（さらに改善）
     if [[ -z "$clean_message" ]]; then
-        clean_message=$(echo "$response" | head -n 1 | sed 's/^[[:space:]]*//' | sed 's/[[:space:]]*$//')
+        # 残っている行から不適切でない最初の行を取得
+        while IFS= read -r line; do
+            # 明らかに不適切な文章を避ける
+            if [[ ! "$line" =~ ^(承知|了解|分かり|わかり|はい|です|ます) ]] && \
+               [[ ! "$line" =~ (いたします|お手伝い|サポート|ヘルプ) ]] && \
+               [[ ${#line} -ge 5 ]] && [[ ${#line} -le 72 ]]; then
+                clean_message="$line"
+                break
+            fi
+        done <<< "$response"
+    fi
+    
+    # それでも見つからない場合は、汎用的なフォールバックを使用
+    if [[ -z "$clean_message" ]]; then
+        log_warn "有効なコミットメッセージが抽出できませんでした。空の応答として返します。"
+        clean_message=""
     fi
     
     response="$clean_message"
@@ -375,7 +408,7 @@ generate_commit_message() {
         model=$(echo "$config" | jq -r '.gemini.model // "gemini-pro"')
         temperature=$(echo "$config" | jq -r '.gemini.temperature // 0.3')
         max_tokens=$(echo "$config" | jq -r '.gemini.max_tokens // 100')
-        timeout=$(echo "$config" | jq -r '.gemini.timeout // 30')
+        timeout=$(echo "$config" | jq -r '.gemini.timeout // 60')
         language=$(echo "$config" | jq -r '.commit_message.language // "ja"')
         max_length=$(echo "$config" | jq -r '.commit_message.max_length // 50')
     else
@@ -383,7 +416,7 @@ generate_commit_message() {
         model="gemini-pro"
         temperature="0.3"
         max_tokens="100"
-        timeout="30"
+        timeout="60"
         language="ja"
         max_length="50"
     fi
@@ -400,7 +433,14 @@ generate_commit_message() {
     # Gemini CLI実行
     local response
     if ! response="$(call_gemini_cli "$prompt" "$model" "$temperature" "$max_tokens" "$timeout")"; then
-        return 1
+        log_warn "Gemini CLI呼び出しが失敗しました（タイムアウト: ${timeout}秒）。フォールバック機能を使用します。"
+        
+        # フォールバック：ファイル状態から簡単なメッセージを生成
+        local fallback_message
+        fallback_message=$(generate_fallback_message "$file_analysis")
+        echo "$fallback_message"
+        log_info "フォールバックメッセージ生成完了"
+        return 0
     fi
     
     # レスポンス後処理
@@ -409,6 +449,62 @@ generate_commit_message() {
     
     echo "$processed_message"
     log_info "コミットメッセージ生成完了"
+    return 0
+}
+
+# フォールバック：ファイル状態から簡単なコミットメッセージを生成
+generate_fallback_message() {
+    local file_analysis="$1"
+    
+    log_info "フォールバック機能でコミットメッセージを生成中..."
+    
+    # Git diff統計を取得
+    local added_files=$(git diff --cached --name-status | grep "^A" | wc -l)
+    local modified_files=$(git diff --cached --name-status | grep "^M" | wc -l)
+    local deleted_files=$(git diff --cached --name-status | grep "^D" | wc -l)
+    local total_files=$((added_files + modified_files + deleted_files))
+    
+    # ファイル名を取得（最初の数個）
+    local changed_files=$(git diff --cached --name-only | head -3 | tr '\n' ', ' | sed 's/,$//')
+    
+    # メッセージ生成
+    local message=""
+    
+    if [[ $total_files -eq 0 ]]; then
+        message="Update files"
+    elif [[ $added_files -gt 0 ]] && [[ $modified_files -eq 0 ]] && [[ $deleted_files -eq 0 ]]; then
+        if [[ $added_files -eq 1 ]]; then
+            message="Add new file: $changed_files"
+        else
+            message="Add $added_files new files"
+        fi
+    elif [[ $modified_files -gt 0 ]] && [[ $added_files -eq 0 ]] && [[ $deleted_files -eq 0 ]]; then
+        if [[ $modified_files -eq 1 ]]; then
+            message="Update file: $changed_files"
+        else
+            message="Update $modified_files files"
+        fi
+    elif [[ $deleted_files -gt 0 ]] && [[ $added_files -eq 0 ]] && [[ $modified_files -eq 0 ]]; then
+        if [[ $deleted_files -eq 1 ]]; then
+            message="Delete file: $changed_files"
+        else
+            message="Delete $deleted_files files"
+        fi
+    else
+        # 混合の場合
+        message="Update $total_files files"
+        if [[ -n "$changed_files" ]]; then
+            message="$message: $changed_files"
+        fi
+    fi
+    
+    # 最大長を考慮してトリム
+    if [[ ${#message} -gt 72 ]]; then
+        message="${message:0:69}..."
+    fi
+    
+    echo "$message"
+    log_debug "フォールバックメッセージ: $message"
     return 0
 }
 

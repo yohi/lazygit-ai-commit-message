@@ -24,27 +24,27 @@ trap cleanup_on_exit EXIT
 sanitize_ai_message() {
     local input_message="$1"
     
-    # ログやノイズ行を除去しつつ、有効なメッセージ行を保持
-    echo "$input_message" | grep -v "^\[20[0-9][0-9]-" | \
-        grep -v "^INFO" | \
-        grep -v "^DEBUG" | \
-        grep -v "^WARN" | \
-        grep -v "^ERROR" | \
-        grep -v "Gemini CLI" | \
-        grep -v "プロンプト" | \
-        grep -v "レスポンス" | \
-        grep -v "実行中" | \
-        grep -v "送信中" | \
-        grep -v "受信" | \
-        grep -v "処理中" | \
-        grep -v "生成" | \
-        grep -v "^✅" | \
-        grep -v "^🖥️" | \
-        grep -v "エディター" | \
-        grep -v "^$" | \
-        sed 's/^[[:space:]]*//' | \
-        sed 's/[[:space:]]*$//' | \
-        grep -v "^$"
+    # ログ行かどうかを判定（タイムスタンプパターンがあるかチェック）
+    if echo "$input_message" | grep -q "^\[20[0-9][0-9]-"; then
+        # ログ行が含まれている場合、最後の有効なメッセージを探す
+        local clean_message
+        clean_message=$(echo "$input_message" | grep -oE '[0-9]+個.*ファイル.*[変更追加削除更新]$|Add new file.*|Update file.*|Delete file.*|[Aa]dd.*file.*|[Uu]pdate.*file.*|[Dd]elete.*file.*|[Cc]hange.*file.*' | tail -1)
+        
+        # 有効なメッセージが見つからない場合は、フォールバックメッセージを抽出
+        if [[ -z "$clean_message" ]]; then
+            clean_message=$(echo "$input_message" | sed -n 's/.*フォールバックメッセージを生成: \(.*\)/\1/p' | tail -1)
+        fi
+        
+        # まだ見つからない場合は、最後の純粋なメッセージ行を探す
+        if [[ -z "$clean_message" ]]; then
+            clean_message=$(echo "$input_message" | grep -v "^\[" | grep -v "INFO\|DEBUG\|WARN\|ERROR" | grep -v "^$" | tail -1)
+        fi
+        
+        echo "$clean_message"
+    else
+        # ログ行が含まれていない場合は軽微なクリーニングのみ
+        echo "$input_message" | sed 's/^[[:space:]]*//' | sed 's/[[:space:]]*$//' | head -1
+    fi
 }
 
 # ポータブルなsymlinkの解決
@@ -127,7 +127,10 @@ AI Commit Generator v${VERSION}
   --generate-only         AIメッセージ生成のみ（ウィンドウ表示なし）
   --auto-window           AI生成完了後に自動でカスタムウィンドウを起動
   --smart-mode            AI生成→自動ウィンドウ→コミット（推奨モード）
-  --enhanced-mode         拡張モード: AI生成→自動ウィンドウ（メッセージ事前入力）→コミット
+            --enhanced-mode         拡張モード: AI生成→自動ウィンドウ（メッセージ事前入力）→コミット
+          --simple-commit         AI生成→確認なし自動コミット（テスト用）
+          --fallback-only         フォールバック機能のみでコミット（Gemini CLI不使用）
+          --use-cached            キャッシュされたメッセージを使用してコミット
 
 例:
   ai-commit-generator                    # 通常実行
@@ -164,6 +167,9 @@ parse_arguments() {
     local auto_window=false
     local smart_mode=false
     local enhanced_mode=false
+    local simple_commit=false
+    local fallback_only=false
+    local use_cached=false
 
     while [[ $# -gt 0 ]]; do
         case $1 in
@@ -273,6 +279,18 @@ parse_arguments() {
                 enhanced_mode=true
                 shift
                 ;;
+            --simple-commit)
+                simple_commit=true
+                shift
+                ;;
+            --fallback-only)
+                fallback_only=true
+                shift
+                ;;
+            --use-cached)
+                use_cached=true
+                shift
+                ;;
             --custom-window-with-message)
                 # 内部用オプション（環境変数からメッセージを受け取り）
                 export CUSTOM_WINDOW_WITH_MESSAGE="true"
@@ -299,6 +317,9 @@ parse_arguments() {
     export AUTO_WINDOW="$auto_window"
     export SMART_MODE="$smart_mode"
     export ENHANCED_MODE="$enhanced_mode"
+    export SIMPLE_COMMIT="$simple_commit"
+    export FALLBACK_ONLY="$fallback_only"
+    export USE_CACHED="$use_cached"
 }
 
 # 環境変数を設定
@@ -792,8 +813,17 @@ main_process_generate_only() {
 
     log_debug "✅ コミットメッセージ生成完了"
     
+    # メッセージサニタイズを適用
+    local clean_commit_message
+    clean_commit_message=$(sanitize_ai_message "$commit_message")
+    
+    # メッセージをキャッシュファイルに保存（Lazygit用）
+    local cache_file="/tmp/ai-commit-message-cache.txt"
+    echo "$clean_commit_message" > "$cache_file"
+    log_debug "コミットメッセージをキャッシュに保存: $cache_file"
+    
     # 結果をstdoutに出力（他のスクリプトで利用可能）
-    echo "$commit_message"
+    echo "$clean_commit_message"
 }
 
 # 自動ウィンドウモード用のメイン処理
@@ -861,6 +891,152 @@ main_process_auto_window() {
         fi
     else
         log_warn "⚠️  ウィンドウがキャンセルされました"
+        exit 1
+    fi
+}
+
+# シンプルコミットモード用のメイン処理（テスト用）
+main_process_simple_commit() {
+    log_info "🚀 シンプルコミットモード（テスト用）"
+
+    # Git diff分析
+    log_info "📊 ステージされたファイルを分析中..."
+    local file_analysis
+    if ! file_analysis=$(analyze_files 2>/dev/null); then
+        log_error "❌ エラー: ステージされたファイルがありません"
+        echo "ファイルをステージしてから再実行してください。"
+        exit 1
+    fi
+
+    # Git diff取得
+    local diff_content
+    if ! diff_content=$(get_git_diff 2>/dev/null); then
+        log_error "❌ エラー: Git diffの取得に失敗しました"
+        exit 1
+    fi
+
+    log_info "✅ ファイル分析完了"
+
+    # Gemini CLIでメッセージ生成
+    log_info "🧠 AIでコミットメッセージを生成中..."
+    local commit_message
+    if ! commit_message=$(generate_commit_message "$diff_content" "$file_analysis" 2>/dev/null); then
+        log_error "❌ エラー: AIコミットメッセージの生成に失敗しました"
+        exit 1
+    fi
+
+    log_info "✅ コミットメッセージ生成完了"
+    
+    # コミットメッセージからログを除去してクリーンアップ
+    commit_message=$(sanitize_ai_message "$commit_message")
+    
+    log_info "📝 クリーンなコミットメッセージ: $commit_message"
+    
+    echo "🎯 生成されたコミットメッセージ:"
+    echo "=================================="
+    echo "$commit_message"
+    echo "=================================="
+    echo
+
+    # 確認なしで直接コミット実行
+    log_info "🚀 コミットを実行中..."
+    if git commit -m "$commit_message"; then
+        echo "✅ コミット完了！"
+        log_info "🎉 シンプルコミット完了！"
+    else
+        echo "❌ コミットに失敗しました"
+        log_error "Git commit failed with message: $commit_message"
+        exit 1
+    fi
+}
+
+# フォールバック専用モード（Gemini CLI不使用）
+main_process_fallback_only() {
+    log_info "🚀 フォールバック専用モード（Gemini CLI不使用）"
+
+    # Git diff分析
+    log_info "📊 ステージされたファイルを分析中..."
+    local file_analysis
+    if ! file_analysis=$(analyze_files 2>/dev/null); then
+        log_error "❌ エラー: ステージされたファイルがありません"
+        echo "ファイルをステージしてから再実行してください。"
+        exit 1
+    fi
+
+    log_info "✅ ファイル分析完了"
+
+    # フォールバック機能でメッセージ生成
+    log_info "🔧 フォールバック機能でコミットメッセージを生成中..."
+    local commit_message
+    commit_message=$(generate_fallback_message "$file_analysis")
+    
+    # フォールバックメッセージもサニタイズ
+    commit_message=$(sanitize_ai_message "$commit_message")
+
+    log_info "✅ コミットメッセージ生成完了"
+    log_info "📝 クリーンなメッセージ: $commit_message"
+    
+    echo "🎯 生成されたコミットメッセージ:"
+    echo "=================================="
+    echo "$commit_message"
+    echo "=================================="
+    echo
+
+    # 確認なしで直接コミット実行
+    log_info "🚀 コミットを実行中..."
+    if git commit -m "$commit_message"; then
+        echo "✅ コミット完了！"
+        log_info "🎉 フォールバック専用コミット完了！"
+    else
+        echo "❌ コミットに失敗しました"
+        log_error "Git commit failed with message: $commit_message"
+        exit 1
+    fi
+}
+
+# キャッシュされたメッセージを使用してコミット
+main_process_use_cached() {
+    log_info "🚀 キャッシュされたメッセージでコミット"
+
+    local cache_file="/tmp/ai-commit-message-cache.txt"
+    
+    # キャッシュファイルが存在するかチェック
+    if [[ ! -f "$cache_file" ]]; then
+        log_error "❌ エラー: キャッシュされたメッセージが見つかりません"
+        echo "先に --generate-only でメッセージを生成してください。"
+        exit 1
+    fi
+    
+    # キャッシュからメッセージを読み込み
+    local commit_message
+    commit_message=$(cat "$cache_file")
+    
+    if [[ -z "$commit_message" ]]; then
+        log_error "❌ エラー: キャッシュファイルが空です"
+        exit 1
+    fi
+    
+    log_info "✅ キャッシュからメッセージを読み込み完了"
+    log_info "📝 キャッシュされたメッセージ: $commit_message"
+    
+    echo "🎯 キャッシュされたコミットメッセージ:"
+    echo "=================================="
+    echo "$commit_message"
+    echo "=================================="
+    echo
+
+    # 確認なしで直接コミット実行
+    log_info "🚀 コミットを実行中..."
+    if git commit -m "$commit_message"; then
+        echo "✅ コミット完了！"
+        log_info "🎉 キャッシュメッセージでコミット完了！"
+        
+        # キャッシュファイルを削除
+        rm -f "$cache_file"
+        log_debug "キャッシュファイルを削除: $cache_file"
+    else
+        echo "❌ コミットに失敗しました"
+        log_error "Git commit failed with cached message: $commit_message"
         exit 1
     fi
 }
@@ -966,6 +1142,15 @@ main_process() {
     # モードに応じて処理を分岐
     if [[ "${CUSTOM_WINDOW_WITH_MESSAGE:-false}" == "true" ]]; then
         main_process_custom_window_with_message
+        return
+    elif [[ "${SIMPLE_COMMIT:-false}" == "true" ]]; then
+        main_process_simple_commit
+        return
+    elif [[ "${FALLBACK_ONLY:-false}" == "true" ]]; then
+        main_process_fallback_only
+        return
+    elif [[ "${USE_CACHED:-false}" == "true" ]]; then
+        main_process_use_cached
         return
     elif [[ "${SMART_MODE:-false}" == "true" ]]; then
         main_process_smart_mode
