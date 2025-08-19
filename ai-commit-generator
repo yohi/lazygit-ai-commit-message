@@ -804,11 +804,9 @@ main_process_auto_window() {
         log_info "💡 しばらくお待ちください..."
         
         # 別プロセスで自動ウィンドウ起動
-        nohup bash -c "
-            sleep 2  # Lazygitの処理が完了するまで待機
-            export AI_GENERATED_MESSAGE='$commit_message'
-            '${MAIN_SCRIPT_DIR}/ai-commit-generator' --custom-window-with-message
-        " >/dev/null 2>&1 &
+        nohup env AI_GENERATED_MESSAGE="$commit_message" \
+            "${MAIN_SCRIPT_DIR}/ai-commit-generator" --custom-window-with-message \
+            >/dev/null 2>&1 &
         
         return 0
     fi

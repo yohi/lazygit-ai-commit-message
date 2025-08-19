@@ -33,8 +33,15 @@ done
 # ソケットの権限を設定
 if [[ -e /tmp/.ydotool_socket ]]; then
     echo "5. ソケット権限を設定中..."
-    sudo chmod 666 /tmp/.ydotool_socket
-    echo "   ✅ ソケット権限を666に設定しました"
+    if getent group input >/dev/null 2>&1; then
+        sudo chgrp input /tmp/.ydotool_socket || true
+        sudo chmod 660 /tmp/.ydotool_socket
+        echo "   ✅ ソケット権限を660 (group: input) に設定しました"
+    else
+        echo "   ⚠️ 'input' グループが見つかりません。最小権限運用のため 'input' グループの作成/付与を検討してください" >&2
+        sudo chmod 660 /tmp/.ydotool_socket
+        echo "   ✅ 暫定で 660 を適用しました"
+    fi
     
     # 権限確認
     echo "6. 権限確認:"
