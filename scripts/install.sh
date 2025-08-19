@@ -231,7 +231,7 @@ EOF
                     continue
                 fi
                 
-                brew install "$brew_name" || { log_error "$tool のインストールに失敗"; return 1; }
+                brew install "$brew_name" || { log_error "$tool のインストールに失敗"; continue; }
                 log_success "$tool のインストール完了"
             done
         else
@@ -244,7 +244,7 @@ EOF
             echo "  Ubuntu/Debian: sudo apt install ${tools_to_install[*]}"
             echo "  CentOS/RHEL: sudo yum install ${tools_to_install[*]}"
             echo "  Arch Linux: sudo pacman -S ${tools_to_install[*]}"
-            return 1
+            return 0
         fi
     else
         log_success "必要なキー送信ツールは既にインストール済みです"
@@ -261,9 +261,13 @@ EOF
     if [[ "${XDG_SESSION_TYPE:-}" == "wayland" ]] && command -v ydotool >/dev/null 2>&1; then
         available_tools+=("ydotool")
         
-        # ydotoolサービス状態確認
-        if systemctl is-active --quiet ydotool 2>/dev/null; then
-            log_success "ydotoolサービスが実行中です"
+        # ydotoolサービス状態確認（ydotoolまydotooldの両方をチェック）
+        if systemctl is-active --quiet ydotool 2>/dev/null || systemctl is-active --quiet ydotoold 2>/dev/null; then
+            if systemctl is-active --quiet ydotool 2>/dev/null; then
+                log_success "ydotoolサービスが実行中です"
+            else
+                log_success "ydotooldサービスが実行中です"
+            fi
         elif [[ -e /tmp/.ydotool_socket ]]; then
             log_info "ydotoolソケットが存在します"
             
@@ -294,7 +298,7 @@ EOF
         echo "  - tmux: sudo apt install tmux"
         if [[ "${XDG_SESSION_TYPE:-}" == "wayland" ]]; then
             echo "  - ydotool: sudo apt install ydotool ydotoold"
-            echo "  - サービス有効化: sudo systemctl enable --now ydotool"
+            echo "  - サービス有効化: sudo systemctl enable --now ydotool || sudo systemctl enable --now ydotoold"
         else
             echo "  - xdotool: sudo apt install xdotool"
         fi

@@ -236,10 +236,26 @@ fi
 # 結果ログとユーザー指示
 if [[ "$success" == "true" ]]; then
     log_message "=== コミットウィンドウ表示成功で終了 ==="
-    exit 0
 else
     log_message "=== コミットウィンドウ表示失敗で終了 ==="
     log_message "代替手順: 手動で'c'キーを押してコミット画面を開いてください"
     log_message "生成されたコミットメッセージは既にテンプレートに設定済みです"
+fi
+
+# コミット完了後のクリーンアップ処理
+log_message "=== ポストコミットクリーンアップ開始 ==="
+# commit.templateをクリア
+git config --unset commit.template 2>/dev/null || true
+log_message "git commit.templateをクリア"
+
+# テンプレートファイルを削除
+template_file="${AI_COMMIT_TEMPLATE_FILE:-/tmp/ai-commit-template.txt}"
+rm -f "$template_file" 2>/dev/null || true
+log_message "テンプレートファイルを削除: $template_file"
+log_message "=== ポストコミットクリーンアップ完了 ==="
+
+if [[ "$success" == "true" ]]; then
+    exit 0
+else
     exit 1
 fi

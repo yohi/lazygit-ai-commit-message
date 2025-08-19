@@ -6,6 +6,11 @@ set -euo pipefail
 
 # 終了時にcommit.templateをクリーンアップ
 cleanup_on_exit() {
+    # LAZYGIT_COMMIT=trueの場合は何もしない（バックグラウンドスクリプトが後でクリーンアップ）
+    if [[ "${LAZYGIT_COMMIT:-false}" == "true" ]]; then
+        return 0
+    fi
+    
     # コミットテンプレートをクリア
     git config --unset commit.template 2>/dev/null || true
     # 一時テンプレートファイルを削除
@@ -14,6 +19,33 @@ cleanup_on_exit() {
 
 # EXIT trapでクリーンアップを実行
 trap cleanup_on_exit EXIT
+
+# AIメッセージをサニタイズ（ログ/ノイズを除去しつつ複数行を保持）
+sanitize_ai_message() {
+    local input_message="$1"
+    
+    # ログやノイズ行を除去しつつ、有効なメッセージ行を保持
+    echo "$input_message" | grep -v "^\[20[0-9][0-9]-" | \
+        grep -v "^INFO" | \
+        grep -v "^DEBUG" | \
+        grep -v "^WARN" | \
+        grep -v "^ERROR" | \
+        grep -v "Gemini CLI" | \
+        grep -v "プロンプト" | \
+        grep -v "レスポンス" | \
+        grep -v "実行中" | \
+        grep -v "送信中" | \
+        grep -v "受信" | \
+        grep -v "処理中" | \
+        grep -v "生成" | \
+        grep -v "^✅" | \
+        grep -v "^🖥️" | \
+        grep -v "エディター" | \
+        grep -v "^$" | \
+        sed 's/^[[:space:]]*//' | \
+        sed 's/[[:space:]]*$//' | \
+        grep -v "^$"
+}
 
 # ポータブルなsymlinkの解決
 resolve_symlink() {
@@ -406,8 +438,8 @@ main_process_lazygit() {
         exit 1
     fi
 
-    # コミットメッセージからログを除去してクリーンアップ（最後の行のみを取得）
-    commit_message=$(echo "$commit_message" | grep -v "^\[20[0-9][0-9]-" | grep -v "INFO" | grep -v "DEBUG" | tail -1)
+    # コミットメッセージからログを除去してクリーンアップ（複数行を保持）
+    commit_message=$(sanitize_ai_message "$commit_message")
 
     log_info "✅ コミットメッセージ生成完了"
     log_info "📝 生成されたコミットメッセージ: $commit_message"
@@ -419,7 +451,7 @@ main_process_lazygit() {
     local edited_message
     if edited_message=$(show_ai_commit_window "$commit_message" 2>/dev/null); then
         # ログ情報を除去してクリーンなメッセージのみを抽出
-        edited_message=$(echo "$edited_message" | grep -v "^\[20[0-9][0-9]-" | grep -v "INFO" | grep -v "DEBUG" | grep -v "✅" | grep -v "🖥️" | grep -v "エディター" | tail -1)
+        edited_message=$(sanitize_ai_message "$edited_message")
         
         log_info "✅ メッセージが編集/確認されました"
         log_info "📝 最終メッセージ: $edited_message"
@@ -503,6 +535,8 @@ main_process_lazygit_commit() {
     local auto_commit_script
     auto_commit_script="$(find_script lazygit_auto_commit.sh)"
     if [[ -n "$auto_commit_script" && -x "$auto_commit_script" ]]; then
+        # AI_COMMIT_TEMPLATE_FILE環境変数をエクスポートしてバックグラウンドスクリプトに渡す
+        export AI_COMMIT_TEMPLATE_FILE="/tmp/ai-commit-template.txt"
         nohup "$auto_commit_script" >/dev/null 2>&1 &
     else
         log_error "❌ エラー: lazygit_auto_commit.sh が見つからないか実行可能ではありません"
