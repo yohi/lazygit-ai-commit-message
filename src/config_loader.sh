@@ -143,7 +143,7 @@ load_user_config() {
         "${USER_CONFIG_DIR}/config.yml"
         "${USER_CONFIG_DIR}/config/default.yml"
         # 既存の設定ファイルも確認
-        "${HOME}/.config/ai-commit-generator/config/default.yml"
+        "${USER_CONFIG_DIR}/config/default.yml"
     )
     
     for config_file in "${user_configs[@]}"; do
