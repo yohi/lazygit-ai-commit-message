@@ -234,7 +234,7 @@ main() {
                 grep -v "^DEBUG" | \
                 grep -v "^WARN" | \
                 grep -v "^ERROR" | \
-                grep -E "^[a-zA-Z].*" | \
+                grep -E "^[a-zA-Z].*|^[あ-んア-ンー一-龯].*" | \
                 head -1 | \
                 sed 's/^[[:space:]]*//' | \
                 sed 's/[[:space:]]*$//'); then
