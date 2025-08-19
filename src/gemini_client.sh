@@ -272,10 +272,10 @@ process_response() {
     local clean_message=""
     while IFS= read -r line; do
         # 明らかにコミットメッセージらしい行をチェック
-        if [[ "$line" =~ ^(feat|fix|docs|style|refactor|test|chore): ]] || \
+        if [[ "$line" =~ ^(feat|fix|docs|style|refactor|test|chore)(\([^)]+\))?:[[:space:]] ]] || \
            [[ "$line" =~ ^[A-Z][a-z].* ]] || \
-           [[ "$line" =~ ^[0-9]+個.*[追更削変]加新$ ]] || \
-           [[ "$line" =~ ^.*ファイルを[追更削変] ]] || \
+           [[ "$line" =~ (追加|更新|削除|変更) ]] || \
+           [[ "$line" =~ ^.*ファイルを(追加|更新|削除|変更) ]] || \
            [[ ${#line} -ge 10 && ${#line} -le 100 ]]; then
             if [[ -z "$clean_message" ]]; then
                 clean_message="$line"

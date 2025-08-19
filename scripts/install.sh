@@ -108,13 +108,20 @@ install_key_sending_tools() {
                                 log_warn "inputグループへの追加に失敗（権限またはグループが存在しない可能性）"
                             fi
                             
-                            # ydotoolサービスファイルが存在するかチェック
-                            if systemctl list-unit-files | grep -q ydotool; then
-                                log_info "ydotoolサービスを有効化中..."
-                                if sudo systemctl enable --now ydotool 2>/dev/null; then
-                                    log_success "ydotoolサービス有効化完了"
+                            # ydotoolサービスファイルが存在するかチェック（ydotooldも含む）
+                            local ydotool_service=""
+                            if systemctl list-unit-files | grep -q "ydotoold"; then
+                                ydotool_service="ydotoold"
+                            elif systemctl list-unit-files | grep -q "ydotool"; then
+                                ydotool_service="ydotool"
+                            fi
+                            
+                            if [[ -n "$ydotool_service" ]]; then
+                                log_info "${ydotool_service}サービスを有効化中..."
+                                if sudo systemctl enable --now "$ydotool_service" 2>/dev/null; then
+                                    log_success "${ydotool_service}サービス有効化完了"
                                 else
-                                    log_warn "ydotoolサービスの有効化に失敗"
+                                    log_warn "${ydotool_service}サービスの有効化に失敗"
                                 fi
                             else
                                 log_info "ydotoolサービスファイルが見つかりません - 手動設定を実行"
@@ -142,9 +149,10 @@ sudo ydotoold &
 # 少し待機してソケットが作成されるのを待つ
 sleep 2
 
-# ソケットの権限を設定
+# ソケットの権限を設定（セキュアな権限）
 if [ -e /tmp/.ydotool_socket ]; then
-    sudo chmod 666 /tmp/.ydotool_socket
+    sudo chown root:input /tmp/.ydotool_socket
+    sudo chmod 660 /tmp/.ydotool_socket
     echo "✅ ydotoolソケットの権限を設定しました"
     echo "ydotool設定完了！"
 else
@@ -192,14 +200,20 @@ EOF
         elif command -v yum >/dev/null 2>&1; then
             log_info "YUMを使用してパッケージをインストール..."
             for tool in "${tools_to_install[@]}"; do
-                sudo yum install -y "$tool" || { log_error "$tool のインストールに失敗"; return 1; }
-                log_success "$tool のインストール完了"
+                if sudo yum install -y "$tool"; then
+                    log_success "$tool のインストール完了"
+                else
+                    log_error "$tool のインストールに失敗"
+                fi
             done
         elif command -v pacman >/dev/null 2>&1; then
             log_info "Pacmanを使用してパッケージをインストール..."
             for tool in "${tools_to_install[@]}"; do
-                sudo pacman -S --noconfirm "$tool" || { log_error "$tool のインストールに失敗"; return 1; }
-                log_success "$tool のインストール完了"
+                if sudo pacman -S --noconfirm "$tool"; then
+                    log_success "$tool のインストール完了"
+                else
+                    log_error "$tool のインストールに失敗"
+                fi
             done
         elif command -v brew >/dev/null 2>&1; then
             log_info "Homebrewを使用してパッケージをインストール..."

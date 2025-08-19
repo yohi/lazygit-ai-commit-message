@@ -71,7 +71,7 @@ if [[ -n "${TMUX:-}" ]]; then
         success=true
         log_message "tmux環境でコミットキー送信成功"
     else
-        local tmux_error=$?
+        tmux_error=$?
         log_message "tmux環境でコミットキー送信失敗 (終了コード: $tmux_error)"
         
         # 詳細なエラー診断
@@ -137,7 +137,7 @@ elif command -v xdotool >/dev/null 2>&1; then
             success=true
             log_message "xdotoolでコミットキー送信成功"
         else
-            local xdotool_error=$?
+            xdotool_error=$?
             log_message "xdotoolでコミットキー送信失敗 (終了コード: $xdotool_error)"
             
             # 別の方法でキー送信を試行
@@ -165,9 +165,8 @@ elif command -v ydotool >/dev/null 2>&1; then
     log_message "1秒待機後にキー送信実行..."
     sleep 1
     
-    local ydotool_output
     ydotool_output=$(ydotool key c 2>&1)  # シンプルなcキー送信に変更
-    local ydotool_exit_code=$?
+    ydotool_exit_code=$?
     
     log_message "ydotool実行結果: 終了コード=$ydotool_exit_code"
     log_message "ydotool出力: $ydotool_output"
