@@ -89,7 +89,7 @@ install_key_sending_tools() {
         if command -v apt >/dev/null 2>&1; then
             log_info "APTを使用してパッケージをインストール..."
             for tool in "${tools_to_install[@]}"; do
-                if ! dpkg -l | grep -q "^ii.*$tool"; then
+                if ! dpkg-query -W -f='${Status}\n' "$tool" 2>/dev/null | grep -q "install ok installed"; then
                     log_info "インストール中: $tool"
                     
                     # ydotoolの場合は依存関係も含めてインストール

@@ -165,7 +165,7 @@ elif command -v ydotool >/dev/null 2>&1; then
     log_message "1秒待機後にキー送信実行..."
     sleep 1
     
-    ydotool_output=$(ydotool key c 2>&1)  # シンプルなcキー送信に変更
+    ydotool_output=$(ydotool key 46:1 46:0 2>&1)  # cキーのキーコード(46)でpress:release
     ydotool_exit_code=$?
     
     log_message "ydotool実行結果: 終了コード=$ydotool_exit_code"
@@ -187,7 +187,7 @@ elif command -v ydotool >/dev/null 2>&1; then
         log_message "0.5秒待機後に再試行..."
         sleep 0.5
         
-        ydotool_output=$(ydotool key c 2>&1)
+        ydotool_output=$(ydotool key 46:1 46:0 2>&1)  # 修正されたcキーコード
         ydotool_exit_code=$?
         
         if [[ $ydotool_exit_code -eq 0 ]]; then
@@ -244,14 +244,26 @@ fi
 
 # コミット完了後のクリーンアップ処理
 log_message "=== ポストコミットクリーンアップ開始 ==="
-# commit.templateをクリア
-git config --unset commit.template 2>/dev/null || true
-log_message "git commit.templateをクリア"
 
-# テンプレートファイルを削除
-template_file="${AI_COMMIT_TEMPLATE_FILE:-/tmp/ai-commit-template.txt}"
-rm -f "$template_file" 2>/dev/null || true
-log_message "テンプレートファイルを削除: $template_file"
+# 成功時のみクリーンアップを実行
+if [[ "$success" == "true" ]]; then
+    # 設定可能な待機時間（環境変数で設定可能、デフォルト500ms）
+    local cleanup_delay_ms="${AI_COMMIT_CLEANUP_DELAY_MS:-500}"
+    log_message "成功時クリーンアップ: ${cleanup_delay_ms}ms待機後に実行"
+    sleep "$(echo "scale=3; $cleanup_delay_ms / 1000" | bc -l 2>/dev/null || echo "0.5")"
+    
+    # commit.templateをクリア
+    git config --unset commit.template 2>/dev/null || true
+    log_message "git commit.templateをクリア"
+
+    # テンプレートファイルを削除
+    template_file="${AI_COMMIT_TEMPLATE_FILE:-/tmp/ai-commit-template.txt}"
+    rm -f "$template_file" 2>/dev/null || true
+    log_message "テンプレートファイルを削除: $template_file"
+else
+    log_message "失敗時: テンプレート設定とファイルを保持（手動リトライ用）"
+fi
+
 log_message "=== ポストコミットクリーンアップ完了 ==="
 
 if [[ "$success" == "true" ]]; then
