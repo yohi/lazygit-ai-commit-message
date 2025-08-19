@@ -151,9 +151,15 @@ sleep 2
 
 # ソケットの権限を設定（セキュアな権限）
 if [ -e /tmp/.ydotool_socket ]; then
-    sudo chown root:input /tmp/.ydotool_socket
-    sudo chmod 660 /tmp/.ydotool_socket
-    echo "✅ ydotoolソケットの権限を設定しました"
+    if getent group input >/dev/null 2>&1; then
+        sudo chgrp input /tmp/.ydotool_socket || true
+        sudo chmod 660 /tmp/.ydotool_socket
+        echo "✅ ydotoolソケットの権限を660 (group: input) に設定しました"
+    else
+        echo "⚠️ 'input' グループが見つかりません。最小権限運用のため 'input' グループの作成/付与を検討してください" >&2
+        sudo chmod 660 /tmp/.ydotool_socket
+        echo "✅ 暫定で 660 を適用しました"
+    fi
     echo "ydotool設定完了！"
 else
     echo "❌ ydotoolソケットの作成に失敗しました"
@@ -266,13 +272,13 @@ EOF
                 log_success "ydotoolが正常に動作しています"
             else
                 log_warn "ydotoolソケットにアクセスできません - 権限問題の可能性"
-                log_info "解決方法: sudo chmod 666 /tmp/.ydotool_socket"
+                log_info "解決方法: sudo usermod -aG input $USER && sudo chgrp input /tmp/.ydotool_socket && sudo chmod 660 /tmp/.ydotool_socket"
             fi
         else
             log_warn "ydotoolサービスが停止、かつソケットも存在しません"
             log_info "手動起動方法:"
             log_info "  1. sudo ydotoold &"
-            log_info "  2. sudo chmod 666 /tmp/.ydotool_socket"
+            log_info "  2. sudo usermod -aG input $USER && sudo chgrp input /tmp/.ydotool_socket && sudo chmod 660 /tmp/.ydotool_socket"
         fi
     elif command -v xdotool >/dev/null 2>&1; then
         available_tools+=("xdotool")
@@ -505,7 +511,7 @@ show_install_complete() {
     echo "   - Wayland環境: ydotool を使用"
     echo "   ※ 自動コミットウィンドウが動作しない場合:"
     echo "     - ログ確認: /tmp/lazygit_auto_commit.log"
-    echo "     - ydotool手動起動: sudo ydotoold & && sudo chmod 666 /tmp/.ydotool_socket"
+    echo "     - ydotool手動起動: sudo ydotoold & && sudo usermod -aG input $USER && sudo chgrp input /tmp/.ydotool_socket && sudo chmod 660 /tmp/.ydotool_socket"
     echo
     echo "トラブルシューティング:"
     echo "- ドキュメント: https://github.com/your-repo/ai-commit-generator"
