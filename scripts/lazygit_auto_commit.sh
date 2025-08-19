@@ -248,9 +248,20 @@ log_message "=== ポストコミットクリーンアップ開始 ==="
 # 成功時のみクリーンアップを実行
 if [[ "$success" == "true" ]]; then
     # 設定可能な待機時間（環境変数で設定可能、デフォルト500ms）
-    local cleanup_delay_ms="${AI_COMMIT_CLEANUP_DELAY_MS:-500}"
+    cleanup_delay_ms="${AI_COMMIT_CLEANUP_DELAY_MS:-500}"
     log_message "成功時クリーンアップ: ${cleanup_delay_ms}ms待機後に実行"
-    sleep "$(echo "scale=3; $cleanup_delay_ms / 1000" | bc -l 2>/dev/null || echo "0.5")"
+    
+    # pure Bashで秒数を計算（bcなしで）
+    delay_seconds="$((cleanup_delay_ms / 1000))"
+    delay_milliseconds="$((cleanup_delay_ms % 1000))"
+    # 小数点形式で結合
+    if [[ $delay_milliseconds -eq 0 ]]; then
+        sleep_time="${delay_seconds}"
+    else
+        sleep_time="${delay_seconds}.$(printf "%03d" $delay_milliseconds)"
+    fi
+    
+    sleep "$sleep_time"
     
     # commit.templateをクリア
     git config --unset commit.template 2>/dev/null || true
